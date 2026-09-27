@@ -213,12 +213,19 @@ async function generateVideo() {
 
     const data = await response.json();
 
-    status.textContent =
-      "✅ SANAPTAI backend connected!\n\n" +
-      "Prompt: " + prompt +
-      "\nDuration: " + duration + " seconds" +
-      "\nAspect Ratio: " + ratio +
-      "\n\n⚙️ Video generation API will be connected in the next step.";
+    const data = await response.json();
+
+if (!response.ok) {
+  throw new Error(data.error || "Project creation failed");
+}
+
+status.textContent =
+  "✅ PROJECT CREATED!\n\n" +
+  "Duration: " + data.project.duration + " seconds\n" +
+  "Scene Duration: " + data.project.sceneDuration + " seconds\n" +
+  "Total Scenes: " + data.project.totalScenes + "\n" +
+  "Aspect Ratio: " + ratio + "\n\n" +
+  "🎬 Scene planning successful!";
 
   } catch (error) {
 
