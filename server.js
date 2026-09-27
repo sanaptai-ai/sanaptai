@@ -16,7 +16,41 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+// Create video project
+app.post('/api/create-project', (req, res) => {
+    const { prompt, duration } = req.body;
 
+    if (!prompt) {
+        return res.status(400).json({
+            error: "Video prompt is required"
+        });
+    }
+
+    const totalSeconds = Number(duration) || 10;
+    const sceneDuration = 10;
+    const sceneCount = Math.ceil(totalSeconds / sceneDuration);
+
+    const scenes = [];
+
+    for (let i = 1; i <= sceneCount; i++) {
+        scenes.push({
+            scene: i,
+            duration: sceneDuration,
+            prompt: prompt,
+            status: "pending"
+        });
+    }
+
+    res.json({
+        status: "success",
+        project: {
+            duration: totalSeconds,
+            sceneDuration: sceneDuration,
+            totalScenes: sceneCount,
+            scenes: scenes
+        }
+    });
+});
 // Test API
 app.get('/api/test', (req, res) => {
     res.json({
