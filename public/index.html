@@ -205,9 +205,9 @@ async function generateVideo() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          prompt: prompt,
-          duration: duration
-        })
+  prompt: document.getElementById("prompt").value.trim(),
+  duration: document.getElementById("duration").value
+})
       }
     );
 
