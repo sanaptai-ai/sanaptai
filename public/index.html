@@ -198,8 +198,18 @@ async function generateVideo() {
   try {
 
     const response = await fetch(
-      "https://sanaptai.onrender.com/api/test"
-    );
+  "https://sanaptai.onrender.com/api/create-project",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      prompt: prompt,
+      duration: duration
+    })
+  }
+);
 
     const data = await response.json();
 
