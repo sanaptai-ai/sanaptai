@@ -1,13 +1,222 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SANAPTAI</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SANAPTAI AI Video Generator</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0b1020;
+  color: white;
+}
+
+.container {
+  max-width: 850px;
+  margin: auto;
+  padding: 25px 16px;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.logo {
+  font-size: 36px;
+  font-weight: bold;
+}
+
+.subtitle {
+  color: #9ca3af;
+  margin-top: 8px;
+}
+
+.card {
+  background: #151c31;
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+textarea,
+select {
+  width: 100%;
+  border: 1px solid #374151;
+  border-radius: 12px;
+  background: #0b1020;
+  color: white;
+  padding: 14px;
+  font-size: 16px;
+}
+
+textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-top: 18px;
+}
+
+button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 16px;
+  border: 0;
+  border-radius: 12px;
+  background: #2563eb;
+  color: white;
+  font-size: 17px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:active {
+  transform: scale(0.99);
+}
+
+.status {
+  display: none;
+  margin-top: 18px;
+  padding: 15px;
+  border-radius: 12px;
+  background: #0b1020;
+  color: #d1d5db;
+  white-space: pre-wrap;
+}
+
+.footer {
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+  margin-top: 25px;
+}
+
+@media (max-width: 600px) {
+  .options {
+    grid-template-columns: 1fr;
+  }
+
+  .logo {
+    font-size: 30px;
+  }
+}
+</style>
 </head>
 
 <body>
-  <h1>SANAPTAI AI VIDEO GENERATOR</h1>
-  <p>Frontend is working successfully!</p>
+
+<div class="container">
+
+  <div class="header">
+    <div class="logo">🎬 SANAPTAI</div>
+    <div class="subtitle">AI Video Generator</div>
+  </div>
+
+  <div class="card">
+
+    <label for="prompt">Video Prompt</label>
+
+    <textarea
+      id="prompt"
+      placeholder="Describe the video you want to create..."
+    ></textarea>
+
+    <div class="options">
+
+      <div>
+        <label for="duration">Duration</label>
+        <select id="duration">
+          <option value="10">10 seconds</option>
+          <option value="20">20 seconds</option>
+          <option value="30">30 seconds</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="ratio">Aspect Ratio</label>
+        <select id="ratio">
+          <option value="9:16">9:16 — Shorts</option>
+          <option value="16:9">16:9 — YouTube</option>
+          <option value="1:1">1:1 — Square</option>
+        </select>
+      </div>
+
+    </div>
+
+    <button onclick="generateVideo()">
+      🚀 Generate Video
+    </button>
+
+    <div class="status" id="status"></div>
+
+  </div>
+
+  <div class="footer">
+    SANAPTAI • AI Video Creation Platform
+  </div>
+
+</div>
+
+<script>
+
+async function generateVideo() {
+
+  const prompt = document.getElementById("prompt").value.trim();
+  const duration = document.getElementById("duration").value;
+  const ratio = document.getElementById("ratio").value;
+  const status = document.getElementById("status");
+
+  status.style.display = "block";
+
+  if (!prompt) {
+    status.textContent = "⚠️ Please enter a video prompt first.";
+    return;
+  }
+
+  status.textContent = "🔄 Connecting to SANAPTAI...";
+
+  try {
+
+    const response = await fetch(
+      "https://sanaptai.onrender.com/api/test"
+    );
+
+    const data = await response.json();
+
+    status.textContent =
+      "✅ SANAPTAI backend connected!\n\n" +
+      "Prompt: " + prompt +
+      "\nDuration: " + duration + " seconds" +
+      "\nAspect Ratio: " + ratio +
+      "\n\n⚙️ Video generation API will be connected in the next step.";
+
+  } catch (error) {
+
+    status.textContent =
+      "❌ Backend connection failed.\n\n" +
+      error.message;
+
+  }
+}
+
+</script>
+
 </body>
 </html>
