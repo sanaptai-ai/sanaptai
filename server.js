@@ -1,21 +1,23 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 
 app.use(express.json());
 
-// 1. Root Route
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Frontend serve करना
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Root Route
 app.get('/', (req, res) => {
-    res.send({
-        status: "success",
-        message: "SANAPTAI backend is up and running successfully! 🚀",
-        endpoints: {
-            test: "/api/test"
-        }
-    });
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// 2. Test API Route
+// Test API
 app.get('/api/test', (req, res) => {
     res.json({
         message: "API is working perfectly!",
@@ -24,6 +26,7 @@ app.get('/api/test', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
     console.log(`SANAPTAI backend running on port ${PORT}`);
 });
