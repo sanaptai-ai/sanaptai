@@ -193,44 +193,43 @@ async function generateVideo() {
     return;
   }
 
-  status.textContent = "🔄 Connecting to SANAPTAI...";
+  status.textContent = "🔄 Creating video project...";
 
   try {
 
     const response = await fetch(
-  "https://sanaptai.onrender.com/api/create-project",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      prompt: prompt,
-      duration: duration
-    })
-  }
-);
+      "https://sanaptai.onrender.com/api/create-project",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          duration: duration
+        })
+      }
+    );
 
     const data = await response.json();
 
-    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Project creation failed");
+    }
 
-if (!response.ok) {
-  throw new Error(data.error || "Project creation failed");
-}
-
-status.textContent =
-  "✅ PROJECT CREATED!\n\n" +
-  "Duration: " + data.project.duration + " seconds\n" +
-  "Scene Duration: " + data.project.sceneDuration + " seconds\n" +
-  "Total Scenes: " + data.project.totalScenes + "\n" +
-  "Aspect Ratio: " + ratio + "\n\n" +
-  "🎬 Scene planning successful!";
+    status.textContent =
+      "✅ PROJECT CREATED!\n\n" +
+      "Prompt: " + prompt + "\n" +
+      "Duration: " + data.project.duration + " seconds\n" +
+      "Scene Duration: " + data.project.sceneDuration + " seconds\n" +
+      "Total Scenes: " + data.project.totalScenes + "\n" +
+      "Aspect Ratio: " + ratio + "\n\n" +
+      "🎬 Scene planning successful!";
 
   } catch (error) {
 
     status.textContent =
-      "❌ Backend connection failed.\n\n" +
+      "❌ Project creation failed.\n\n" +
       error.message;
 
   }
