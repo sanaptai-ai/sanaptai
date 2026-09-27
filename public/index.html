@@ -217,14 +217,21 @@ async function generateVideo() {
       throw new Error(data.error || "Project creation failed");
     }
 
-    status.textContent =
-      "✅ PROJECT CREATED!\n\n" +
-      "Prompt: " + prompt + "\n" +
-      "Duration: " + data.project.duration + " seconds\n" +
-      "Scene Duration: " + data.project.sceneDuration + " seconds\n" +
-      "Total Scenes: " + data.project.totalScenes + "\n" +
-      "Aspect Ratio: " + ratio + "\n\n" +
-      "🎬 Scene planning successful!";
+    let sceneText =
+  "✅ PROJECT CREATED!\n\n" +
+  "Duration: " + data.project.duration + " seconds\n" +
+  "Total Scenes: " + data.project.totalScenes + "\n" +
+  "Aspect Ratio: " + ratio + "\n\n" +
+  "🎬 SCENE PLAN\n\n";
+
+data.project.scenes.forEach((scene) => {
+  sceneText +=
+    "Scene " + scene.scene +
+    " (" + scene.start + "-" + scene.end + " sec)\n" +
+    scene.prompt + "\n\n";
+});
+
+status.textContent = sceneText;
 
   } catch (error) {
 
