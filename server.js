@@ -51,6 +51,46 @@ app.post('/api/create-project', (req, res) => {
         }
     });
 });
+// AI Scene Planner
+app.post('/api/plan-scenes', (req, res) => {
+    const { prompt, duration } = req.body;
+
+    if (!prompt) {
+        return res.status(400).json({
+            error: "Video prompt is required"
+        });
+    }
+
+    const totalSeconds = Number(duration) || 10;
+    const sceneDuration = 10;
+    const totalScenes = Math.ceil(totalSeconds / sceneDuration);
+
+    const scenes = [];
+
+    for (let i = 1; i <= totalScenes; i++) {
+        scenes.push({
+            scene: i,
+            start: (i - 1) * 10,
+            end: i * 10,
+            duration: 10,
+            prompt: `Create scene ${i} for this story: ${prompt}`,
+            dialogue: "",
+            voiceover: "",
+            status: "planned"
+        });
+    }
+
+    res.json({
+        status: "success",
+        message: "Scene plan created successfully",
+        project: {
+            duration: totalSeconds,
+            sceneDuration: sceneDuration,
+            totalScenes: totalScenes,
+            scenes: scenes
+        }
+    });
+});
 // Test API
 app.get('/api/test', (req, res) => {
     res.json({
