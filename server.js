@@ -14,14 +14,14 @@ app.use(express.json());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Create video project
+
+// Create basic video project
 app.post('/api/create-project', (req, res) => {
     const { prompt, duration } = req.body;
 
@@ -40,7 +40,9 @@ app.post('/api/create-project', (req, res) => {
     for (let i = 1; i <= sceneCount; i++) {
         scenes.push({
             scene: i,
-            duration: sceneDuration,
+            start: (i - 1) * 10,
+            end: i * 10,
+            duration: 10,
             prompt: prompt,
             status: 'pending'
         });
@@ -57,8 +59,10 @@ app.post('/api/create-project', (req, res) => {
     });
 });
 
-// AI Scene Planner - Gemini
+
+// AI Scene Planner
 app.post('/api/plan-scenes', async (req, res) => {
+
     const { prompt, duration } = req.body;
 
     if (!prompt) {
@@ -72,34 +76,63 @@ app.post('/api/plan-scenes', async (req, res) => {
     const totalScenes = Math.ceil(totalSeconds / sceneDuration);
 
     try {
+
         const response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
+
             contents: `Create a detailed ${totalScenes}-scene video story from this idea:
 
 "${prompt}"
 
 IMPORTANT CHARACTER CONSISTENCY RULES:
-- First identify the main character(s) from the story.
-- Create a permanent CHARACTER LOCK for every important character.
-- The same character must look exactly the same in every scene.
-- Keep the same face, age, skin tone, hairstyle, hair color, eye color, body type, clothing, accessories, and distinguishing features.
-- Never randomly change clothing, hairstyle, age, face, body proportions, or appearance between scenes.
-- Every scene prompt must repeat the relevant character's locked physical description.
-- Maintain logical continuity of location, time, weather, lighting, props, and character position from scene to scene.
+
+1. Identify all important characters in the story.
+
+2. Create a permanent CHARACTER LOCK for every important character.
+
+3. The same character must look exactly the same in every scene.
+
+4. Keep the same:
+- face
+- age
+- skin tone
+- hairstyle
+- hair color
+- eye color
+- body type
+- clothing
+- accessories
+- distinguishing features
+
+5. Never randomly change a character's appearance.
+
+6. Every scene prompt must include the relevant character's locked appearance.
+
+7. Maintain continuity of:
+- location
+- time
+- weather
+- lighting
+- props
+- character position
+- story events
 
 VIDEO RULES:
+
 - Exactly ${totalScenes} scenes.
 - Every scene is exactly 10 seconds.
 - Every scene must continue naturally from the previous scene.
-- Create cinematic, detailed video-generation prompts.
-- Dialogue must be short enough to be spoken naturally within 10 seconds.
+- Create detailed cinematic video-generation prompts.
+- Dialogue must fit naturally inside 10 seconds.
 - Use voiceover when narration is needed.
 - Avoid repetitive dialogue.
 - Do not skip important story events.
+- Keep the same characters consistent throughout the entire video.
 
 Return ONLY valid JSON.
 
-JSON format:
+JSON FORMAT:
+
 {
   "character_locks": [
     {
@@ -113,22 +146,9 @@ JSON format:
       "start": 0,
       "end": 10,
       "duration": 10,
-      "prompt": "Detailed cinematic video prompt including the relevant character lock",
+      "prompt": "Detailed cinematic video prompt including character consistency",
       "dialogue": "Short dialogue or empty string",
       "voiceover": "Short voiceover or empty string"
-    }
-  ]
-}`
-{
-  "scenes": [
-    {
-      "scene": 1,
-      "start": 0,
-      "end": 10,
-      "duration": 10,
-      "prompt": "detailed visual prompt",
-      "dialogue": "short dialogue",
-      "voiceover": "short voiceover"
     }
   ]
 }`
@@ -136,24 +156,27 @@ JSON format:
 
         let text = response.text.trim();
 
-        text = text.replace(/^```json\s*/i, '');
-        text = text.replace(/^```\s*/i, '');
-        text = text.replace(/\s*```$/i, '');
+        text = text.replace(/^```json\\s*/i, '');
+        text = text.replace(/^```\\s*/i, '');
+        text = text.replace(/\\s*```$/i, '');
 
         const aiData = JSON.parse(text);
 
         res.json({
             status: 'success',
             message: 'Gemini scene plan created successfully',
+
             project: {
                 duration: totalSeconds,
                 sceneDuration: sceneDuration,
                 totalScenes: totalScenes,
-                scenes: aiData.scenes
+                characterLocks: aiData.character_locks || [],
+                scenes: aiData.scenes || []
             }
         });
 
     } catch (error) {
+
         console.error('Gemini Error:', error);
 
         res.status(500).json({
@@ -163,6 +186,7 @@ JSON format:
     }
 });
 
+
 // Test API
 app.get('/api/test', (req, res) => {
     res.json({
@@ -170,6 +194,7 @@ app.get('/api/test', (req, res) => {
         timestamp: new Date()
     });
 });
+
 
 const PORT = process.env.PORT || 3000;
 
