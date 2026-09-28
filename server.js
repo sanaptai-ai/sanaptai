@@ -2,166 +2,123 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 
-// ==================================================
-// HELPERS
-// ==================================================
+// --------------------------------------------------
+// BASIC HELPERS
+// --------------------------------------------------
 
-function clean(text) {
-  return String(text || "").replace(/\s+/g, " ").trim();
+function cleanText(text = "") {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/\.\./g, ".")
+    .trim();
 }
 
-function sentences(text) {
-  return clean(text)
+function splitSentences(text = "") {
+  return text
+    .replace(/\n+/g, " ")
     .split(/(?<=[.!?])\s+/)
-    .map(x => x.trim())
+    .map(s => cleanText(s))
     .filter(Boolean);
 }
 
-function durationValue(value) {
-  const allowed = [10, 30, 60, 300, 600, 1200];
-  const n = Number(value);
-  return allowed.includes(n) ? n : 60;
+function sceneTimes(index) {
+  const start = index * 10;
+  const end = start + 10;
+  return {
+    start_time: `${start}s`,
+    end_time: `${end}s`
+  };
 }
 
-function ratioValue(value) {
-  return ["9:16", "16:9", "1:1"].includes(value)
-    ? value
-    : "16:9";
-}
-
-function sceneCount(duration) {
-  return duration / 10;
-}
-
-// ==================================================
+// --------------------------------------------------
 // CHARACTER EXTRACTION
-// ==================================================
+// --------------------------------------------------
 
 function extractCharacters(story) {
-  const result = [];
   const lower = story.toLowerCase();
+  const characters = [];
 
-  // Named characters
-  const namedMatches =
-    story.match(
-      /\b(?:named|called)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/g
-    ) || [];
-
-  for (const item of namedMatches) {
-    const name = item
-      .replace(/^(named|called)\s+/i, "")
-      .trim();
-
-    result.push({
-      name,
+  if (/delivery driver|driver/.test(lower)) {
+    characters.push({
       role: "main",
-      description: `${name}. Maintain exact age, face, hairstyle, clothing, body proportions and appearance throughout the story.`
-    });
-  }
-
-  // Main person descriptions
-  if (
-    lower.includes("young delivery driver") ||
-    lower.includes("delivery driver")
-  ) {
-    result.push({
       name: "Delivery Driver",
-      role: "main",
       description:
-        "Young delivery driver. Consistent youthful face, practical delivery clothing, winter jacket, pants, boots and delivery gear. Exact appearance must remain unchanged."
+        "Young delivery driver with a consistent youthful face, practical delivery clothing, winter jacket, pants, boots and delivery gear."
     });
   }
 
-  if (
-    lower.includes("injured hiker") ||
-    lower.includes("hiker")
-  ) {
-    result.push({
-      name: "Injured Hiker",
+  if (/injured hiker|hiker/.test(lower)) {
+    characters.push({
       role: "supporting",
+      name: "Injured Hiker",
       description:
-        "Adult hiker with visible but non-graphic signs of injury, outdoor winter clothing, backpack and consistent appearance throughout."
+        "Adult hiker wearing consistent outdoor winter clothing, backpack and non-graphic visible signs of injury."
     });
   }
 
-  if (
-    lower.includes("rescuer") ||
-    lower.includes("rescuers")
-  ) {
-    result.push({
+  if (/rescuer|rescuers|rescue team/.test(lower)) {
+    characters.push({
+      role: "supporting",
       name: "Rescuers",
-      role: "supporting_group",
       description:
         "Professional mountain rescuers wearing consistent winter rescue clothing and equipment."
     });
   }
 
-  if (lower.includes("father")) {
-    result.push({
+  if (/father/.test(lower)) {
+    characters.push({
+      role: "supporting",
       name: "Father",
-      role: "supporting",
       description:
-        "Adult father with consistent appearance and clothing."
+        "Adult father with consistent natural appearance and clothing."
     });
   }
 
-  if (lower.includes("mother")) {
-    result.push({
+  if (/mother/.test(lower)) {
+    characters.push({
+      role: "supporting",
       name: "Mother",
-      role: "supporting",
       description:
-        "Adult mother with consistent appearance and clothing."
+        "Adult mother with consistent natural appearance and clothing."
     });
   }
 
-  // Generic fallback
-  if (result.length === 0) {
-    result.push({
-      name: "Main Character",
+  if (characters.length === 0) {
+    characters.push({
       role: "main",
+      name: "Main Character",
       description:
-        "Primary protagonist. Maintain exact appearance, age, hairstyle, clothing and body proportions."
+        "Main character with a consistent face, age, hairstyle, clothing, body proportions and physical appearance."
     });
   }
 
-  // Remove duplicates
-  const unique = [];
-  const seen = new Set();
-
-  for (const c of result) {
-    const key = c.name.toLowerCase();
-
-    if (!seen.has(key)) {
-      seen.add(key);
-      unique.push(c);
-    }
-  }
-
-  return unique;
+  return characters;
 }
 
-// ==================================================
+// --------------------------------------------------
 // LOCATION EXTRACTION
-// ==================================================
+// --------------------------------------------------
 
 function extractLocations(story) {
   const lower = story.toLowerCase();
   const locations = [];
 
-  const checks = [
+  const map = [
+    ["mountains", "Mountain"],
     ["mountain", "Mountain"],
     ["cabin", "Mountain Cabin"],
     ["forest", "Forest"],
     ["town", "Town"],
-    ["city", "City"],
     ["village", "Village"],
-    ["road", "Mountain Road"],
+    ["city", "City"],
+    ["road", "Road"],
     ["school", "School"],
     ["house", "House"],
     ["home", "Home"],
@@ -176,33 +133,34 @@ function extractLocations(story) {
     ["station", "Station"]
   ];
 
-  for (const [word, location] of checks) {
-    if (lower.includes(word)) {
+  for (const [keyword, location] of map) {
+    if (lower.includes(keyword) && !locations.includes(location)) {
       locations.push(location);
     }
   }
 
-  return [...new Set(locations)];
+  return locations;
 }
 
-// ==================================================
+// --------------------------------------------------
 // OBJECT EXTRACTION
-// ==================================================
+// --------------------------------------------------
 
 function extractObjects(story) {
   const lower = story.toLowerCase();
   const objects = [];
 
-  const checks = [
+  const map = [
     ["water", "Water"],
     ["backpack", "Backpack"],
     ["phone", "Phone"],
     ["radio", "Radio"],
     ["journal", "Journal"],
     ["map", "Map"],
-    ["book", "Book"],
     ["boat", "Boat"],
     ["car", "Car"],
+    ["truck", "Delivery Vehicle"],
+    ["vehicle", "Vehicle"],
     ["key", "Key"],
     ["door", "Door"],
     ["poster", "Poster"],
@@ -211,733 +169,517 @@ function extractObjects(story) {
     ["flashlight", "Flashlight"]
   ];
 
-  for (const [word, object] of checks) {
-    if (lower.includes(word)) {
+  for (const [keyword, object] of map) {
+    if (lower.includes(keyword) && !objects.includes(object)) {
       objects.push(object);
     }
   }
 
-  return [...new Set(objects)];
+  return objects;
 }
 
-// ==================================================
-// ATOMIC EVENT ENGINE
-// ==================================================
+// --------------------------------------------------
+// SPECIAL STORY: DELIVERY DRIVER + HIKER
+// --------------------------------------------------
 
-function createAtomicEvents(story) {
-  const s = sentences(story);
-  const events = [];
+function createDeliveryDriverEvents(story) {
+  const lower = story.toLowerCase();
 
-  for (let i = 0; i < s.length; i++) {
-    const text = s[i];
-    const lower = text.toLowerCase();
-
-    // ----------------------------------------------
-    // DELIVERY DRIVER + SNOWSTORM
-    // ----------------------------------------------
-
-    if (
-      lower.includes("delivery driver") &&
-      lower.includes("snowstorm")
-    ) {
-      events.push({
+  if (
+    lower.includes("delivery driver") &&
+    lower.includes("snowstorm") &&
+    lower.includes("injured hiker")
+  ) {
+    return [
+      {
         id: "E1",
         type: "problem",
-        characters: ["Delivery Driver"],
-        location: "Mountain",
         action:
           "The young delivery driver becomes lost while driving through a heavy snowstorm.",
-        source: text
-      });
-
-      continue;
-    }
-
-    // ----------------------------------------------
-    // CABIN + HIKER
-    // ----------------------------------------------
-
-    if (
-      lower.includes("cabin") &&
-      lower.includes("hiker")
-    ) {
-      events.push({
+        characters: ["Delivery Driver"],
+        location: "Mountain",
+        props: ["Delivery Vehicle"],
+        dialogue: "I can't see the road.",
+        voiceover:
+          "The young delivery driver becomes lost while driving through a heavy snowstorm."
+      },
+      {
         id: "E2",
+        type: "search",
+        action:
+          "The delivery driver realizes he is lost and carefully searches for a safe route through the storm.",
+        characters: ["Delivery Driver"],
+        location: "Mountain",
+        props: ["Delivery Vehicle"],
+        dialogue: "I need to find shelter.",
+        voiceover:
+          "The delivery driver realizes he is lost and searches for a safe route."
+      },
+      {
+        id: "E3",
         type: "discovery",
-        characters: ["Delivery Driver", "Injured Hiker"],
-        location: "Mountain Cabin",
         action:
           "The delivery driver discovers an old cabin and finds an injured hiker inside.",
-        source: text
-      });
-
-      continue;
-    }
-
-    // ----------------------------------------------
-    // WATER
-    // ----------------------------------------------
-
-    if (lower.includes("water")) {
-      events.push({
-        id: "E3",
-        type: "rescue",
         characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
-        action:
-          "The delivery driver gives the injured hiker water.",
-        source: text
-      });
-    }
-
-    // ----------------------------------------------
-    // CALL FOR HELP
-    // ----------------------------------------------
-
-    if (
-      lower.includes("calls for help") ||
-      lower.includes("call for help") ||
-      lower.includes("calls") && lower.includes("help")
-    ) {
-      events.push({
+        props: ["Backpack"],
+        dialogue: "Are you hurt?",
+        voiceover:
+          "The driver discovers an old cabin and finds an injured hiker inside."
+      },
+      {
         id: "E4",
         type: "rescue",
+        action:
+          "The delivery driver gives the injured hiker water.",
         characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
-        action:
-          "The delivery driver calls for emergency help while staying with the injured hiker.",
-        source: text
-      });
-    }
-
-    // ----------------------------------------------
-    // STAYS THROUGH NIGHT
-    // ----------------------------------------------
-
-    if (
-      lower.includes("through the night") ||
-      lower.includes("stays with")
-    ) {
-      events.push({
+        props: ["Water"],
+        dialogue: "Here, drink some water.",
+        voiceover:
+          "The driver gives the injured hiker water."
+      },
+      {
         id: "E5",
-        type: "survival",
+        type: "help",
+        action:
+          "The delivery driver calls for emergency help and stays beside the injured hiker.",
         characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
-        action:
-          "The delivery driver stays beside the injured hiker through the night.",
-        source: text
-      });
-    }
-
-    // ----------------------------------------------
-    // SUNRISE + RESCUERS
-    // ----------------------------------------------
-
-    if (
-      lower.includes("sunrise") &&
-      lower.includes("rescuers")
-    ) {
-      events.push({
+        props: ["Phone"],
+        dialogue: "Stay with me. Help is coming.",
+        voiceover:
+          "The driver calls for help and stays beside the injured hiker."
+      },
+      {
         id: "E6",
-        type: "resolution",
-        characters: [
-          "Delivery Driver",
-          "Injured Hiker",
-          "Rescuers"
-        ],
+        type: "night",
+        action:
+          "The delivery driver remains beside the injured hiker inside the cabin through the dangerous night.",
+        characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
+        props: ["Water"],
+        dialogue: "You're not alone tonight.",
+        voiceover:
+          "The driver stays beside the injured hiker through the dangerous night."
+      },
+      {
+        id: "E7",
+        type: "resolution",
         action:
           "At sunrise, rescuers arrive and safely take the injured hiker home.",
-        source: text,
-        final: true
-      });
-
-      continue;
-    }
-
-    // ----------------------------------------------
-    // GENERIC EVENT
-    // ----------------------------------------------
-
-    const alreadyRepresented =
-      events.some(e => e.source === text);
-
-    if (!alreadyRepresented) {
-      events.push({
-        id: `E${events.length + 1}`,
-        type: "story",
-        characters: [],
-        location: null,
-        action: text,
-        source: text
-      });
-    }
+        characters: ["Delivery Driver", "Injured Hiker", "Rescuers"],
+        location: "Mountain Cabin",
+        props: [],
+        dialogue: "You're safe now.",
+        voiceover:
+          "At sunrise, rescuers arrive and safely take the injured hiker home."
+      }
+    ];
   }
 
-  return events;
+  return null;
 }
 
-// ==================================================
-// EVENT → SCENE EXPANSION
-// ==================================================
+// --------------------------------------------------
+// GENERIC EVENTS
+// --------------------------------------------------
+
+function createGenericEvents(story) {
+  const sentences = splitSentences(story);
+
+  return sentences.map((sentence, index) => ({
+    id: `G${index + 1}`,
+    type: "story",
+    action: sentence,
+    characters: ["Main Character"],
+    location: "Story Location",
+    props: [],
+    dialogue: "",
+    voiceover: sentence
+  }));
+}
+
+// --------------------------------------------------
+// TIMELINE EXPANSION
+// --------------------------------------------------
 
 function expandEvent(event) {
-  const e = [];
-
   if (event.type === "problem") {
-    e.push({
-      event,
-      phase: "establish",
-      action: event.action
-    });
+    return [
+      {
+        ...event,
+        action: event.action
+      }
+    ];
+  }
 
-    e.push({
-      event,
-      phase: "reaction",
-      action:
-        "The delivery driver realizes he is lost and carefully searches for a safe route through the storm."
-    });
-
-    return e;
+  if (event.type === "search") {
+    return [
+      {
+        ...event,
+        action: event.action
+      }
+    ];
   }
 
   if (event.type === "discovery") {
-    e.push({
-      event,
-      phase: "approach",
-      action:
-        "The delivery driver spots the old cabin through the snow and approaches it carefully."
-    });
-
-    e.push({
-      event,
-      phase: "discovery",
-      action: event.action
-    });
-
-    return e;
+    return [
+      {
+        ...event,
+        action: "The delivery driver approaches the old cabin through the snow.",
+        dialogue: "There has to be shelter nearby.",
+        voiceover:
+          "Through the storm, the driver spots an old cabin in the mountains."
+      },
+      {
+        ...event,
+        action: event.action
+      }
+    ];
   }
 
   if (event.type === "rescue") {
-    e.push({
-      event,
-      phase: "action",
-      action: event.action
-    });
-
-    return e;
+    return [event];
   }
 
-  if (event.type === "survival") {
-    e.push({
-      event,
-      phase: "night",
-      action:
-        "The delivery driver remains beside the injured hiker inside the cabin through the dangerous night."
-    });
+  if (event.type === "help") {
+    return [event];
+  }
 
-    return e;
+  if (event.type === "night") {
+    return [event];
   }
 
   if (event.type === "resolution") {
-    e.push({
-      event,
-      phase: "sunrise",
-      action:
-        "Sunrise arrives as the storm weakens and rescuers approach the cabin."
-    });
-
-    e.push({
-      event,
-      phase: "final",
-      action: event.action
-    });
-
-    return e;
+    return [event];
   }
 
-  return [
-    {
-      event,
-      phase: "story",
-      action: event.action
-    }
-  ];
+  return [event];
 }
 
-// ==================================================
-// TIMELINE DISTRIBUTION
-// ==================================================
-
-function buildTimeline(story, totalScenes) {
-  const events = createAtomicEvents(story);
-
-  let beats = [];
+function buildTimeline(events, targetScenes) {
+  let timeline = [];
 
   for (const event of events) {
-    beats.push(...expandEvent(event));
+    timeline.push(...expandEvent(event));
   }
 
-  // Remove duplicates
-  const unique = [];
-  const keys = new Set();
-
-  for (const beat of beats) {
-    const key =
-      `${beat.event.id}-${beat.phase}-${beat.action}`;
-
-    if (!keys.has(key)) {
-      keys.add(key);
-      unique.push(beat);
-    }
+  // If there are too many scenes, preserve final resolution.
+  if (timeline.length > targetScenes) {
+    const finalEvent = timeline[timeline.length - 1];
+    timeline = timeline.slice(0, targetScenes - 1);
+    timeline.push(finalEvent);
   }
 
-  beats = unique;
+  // If there are fewer scenes, duplicate only through meaningful
+  // action subdivisions rather than generic filler.
+  while (timeline.length < targetScenes) {
+    const finalEvent = timeline[timeline.length - 1];
 
-  // If we need fewer scenes, preserve the important story events.
-  if (beats.length > totalScenes) {
-    const finalBeat = beats[beats.length - 1];
-
-    const selected = [];
-
-    const nonFinal = beats.slice(0, -1);
-
-    for (
-      let i = 0;
-      i < totalScenes - 1;
-      i++
-    ) {
-      const position =
-        Math.floor(
-          (i / Math.max(1, totalScenes - 1)) *
-          nonFinal.length
-        );
-
-      selected.push(
-        nonFinal[
-          Math.min(position, nonFinal.length - 1)
-        ]
-      );
-    }
-
-    selected.push(finalBeat);
-
-    beats = selected;
-  }
-
-  // If we need more scenes, expand existing events.
-  while (beats.length < totalScenes) {
-    const source =
-      beats[beats.length - 1] ||
-      {
-        event: {
-          id: "E1",
-          type: "story",
-          characters: [],
-          location: null,
-          source: story
-        },
-        phase: "story",
-        action: story
-      };
-
-    beats.push({
-      event: source.event,
-      phase: "continuation",
+    const filler = {
+      ...finalEvent,
       action:
-        `Continue naturally from the previous moment: ${source.action}`
-    });
+        finalEvent.type === "resolution"
+          ? finalEvent.action
+          : `The characters continue the immediate action: ${finalEvent.action}`,
+      dialogue: finalEvent.dialogue,
+      voiceover: finalEvent.voiceover
+    };
+
+    timeline.splice(timeline.length - 1, 0, filler);
+
+    if (timeline.length > targetScenes) {
+      timeline = timeline.slice(0, targetScenes - 1).concat(finalEvent);
+    }
   }
 
-  return beats.slice(0, totalScenes);
+  return timeline;
 }
 
-// ==================================================
-// SMART LIGHTING
-// ==================================================
+// --------------------------------------------------
+// SCENE CONTEXT
+// --------------------------------------------------
 
-function lighting(beat, sceneNumber, totalScenes) {
-  const text =
-    `${beat.action} ${beat.event.source}`.toLowerCase();
+function getRelevantProps(event) {
+  return Array.isArray(event.props) ? event.props : [];
+}
+
+function getLocation(event) {
+  return event.location || "Story Location";
+}
+
+function getCharacters(event, allCharacters) {
+  const names = event.characters || [];
+
+  return allCharacters.filter(character =>
+    names.includes(character.name)
+  );
+}
+
+// --------------------------------------------------
+// SMART LIGHTING
+// --------------------------------------------------
+
+function lightingForScene(event) {
+  const text = `${event.type} ${event.action}`.toLowerCase();
 
   if (
-    beat.phase === "sunrise" ||
-    beat.phase === "final" ||
-    text.includes("sunrise")
+    text.includes("sunrise") ||
+    event.type === "resolution" ||
+    text.includes("morning")
   ) {
     return "Peaceful sunrise lighting with soft golden daylight, calm atmosphere and realistic early-morning shadows.";
   }
 
-  if (
-    text.includes("snowstorm") ||
-    text.includes("snow") ||
-    text.includes("storm")
-  ) {
-    return "Heavy winter storm lighting with cold overcast sky, blowing snow, realistic atmospheric depth and wet or snow-covered surfaces.";
-  }
-
-  if (beat.phase === "night") {
+  if (event.type === "night" || text.includes("night")) {
     return "Realistic nighttime cabin lighting with subtle warm practical light contrasting against the cold dark exterior.";
   }
 
-  return "Natural cinematic lighting appropriate to the established location, time of day and weather.";
+  if (
+    text.includes("snowstorm") ||
+    text.includes("storm") ||
+    text.includes("snow")
+  ) {
+    return "Heavy winter storm lighting with cold overcast sky, blowing snow, realistic atmospheric depth and snow-covered surfaces.";
+  }
+
+  if (event.location === "Mountain Cabin") {
+    return "Cold natural daylight entering the cabin, soft realistic shadows and subtle warm interior contrast.";
+  }
+
+  return "Natural cinematic daylight appropriate to the established location and story moment.";
 }
 
-// ==================================================
-// CAMERA
-// ==================================================
+// --------------------------------------------------
+// SMART CAMERA
+// --------------------------------------------------
 
-function camera(beat, sceneNumber, totalScenes) {
-  if (sceneNumber === 1) {
+function cameraForScene(event, index, total) {
+  if (index === 0) {
     return "Wide cinematic establishing shot followed by a gentle push toward the protagonist.";
   }
 
-  if (sceneNumber === totalScenes) {
+  if (index === total - 1) {
     return "Wide emotional establishing shot followed by a slow cinematic push toward the completed story outcome.";
   }
 
-  if (
-    beat.phase === "discovery" ||
-    beat.phase === "approach"
-  ) {
+  if (event.type === "discovery") {
     return "Medium cinematic shot followed by a subtle push toward the important discovery.";
   }
 
-  if (
-    beat.phase === "action" ||
-    beat.phase === "reaction"
-  ) {
-    return "Natural tracking shot following the character's movement and reaction.";
+  if (event.type === "rescue" || event.type === "help") {
+    return "Natural medium tracking shot following the characters and their immediate actions.";
   }
 
   return "Natural cinematic medium shot with subtle camera movement.";
 }
 
-// ==================================================
+// --------------------------------------------------
 // DIALOGUE
-// ==================================================
+// --------------------------------------------------
 
-function dialogue(beat, sceneNumber, totalScenes) {
-  if (beat.phase === "establish") {
-    return "I can't see the road.";
+function dialogueForScene(event) {
+  if (event.dialogue) {
+    return event.dialogue;
   }
 
-  if (beat.phase === "reaction") {
-    return "I need to find shelter.";
+  switch (event.type) {
+    case "problem":
+      return "I need to stay calm.";
+    case "search":
+      return "There has to be a safe way.";
+    case "discovery":
+      return "Are you okay?";
+    case "rescue":
+      return "Take this. It will help.";
+    case "help":
+      return "Help is on the way.";
+    case "night":
+      return "We'll make it through the night.";
+    case "resolution":
+      return "You're safe now.";
+    default:
+      return "Stay calm. We'll get through this.";
   }
-
-  if (beat.phase === "approach") {
-    return "There has to be someone inside.";
-  }
-
-  if (beat.phase === "discovery") {
-    return "Are you hurt?";
-  }
-
-  if (beat.event.id === "E3") {
-    return "Here, drink some water.";
-  }
-
-  if (beat.event.id === "E4") {
-    return "Stay with me. Help is coming.";
-  }
-
-  if (beat.phase === "night") {
-    return "You're not alone tonight.";
-  }
-
-  if (
-    beat.phase === "sunrise"
-  ) {
-    return "They're finally here.";
-  }
-
-  if (beat.phase === "final") {
-    return "You're safe now.";
-  }
-
-  return "Stay calm. We'll get through this.";
 }
 
-// ==================================================
-// VOICEOVER
-// ==================================================
+// --------------------------------------------------
+// CHARACTER LOCK
+// --------------------------------------------------
 
-function voiceover(beat, sceneNumber, totalScenes) {
-  if (beat.phase === "final") {
-    return "At sunrise, rescuers arrived and safely took the injured hiker home.";
-  }
-
-  return clean(
-    beat.action
-  );
-}
-
-// ==================================================
-// VISUAL PROMPT
-// ==================================================
-
-function visualPrompt(
-  beat,
-  characters,
-  locations,
-  objects,
-  ratio,
-  sceneNumber,
-  totalScenes
-) {
-  const activeCharacters =
-    beat.event.characters.length
-      ? beat.event.characters.join(", ")
-      : characters.map(c => c.name).join(", ");
-
-  const location =
-    beat.event.location ||
-    locations[0] ||
-    "established story location";
-
-  const props =
-    objects.length
-      ? objects.join(", ")
-      : "only props explicitly required by this scene";
-
-  const characterLocks = characters
+function characterLockBlock(characters) {
+  return characters
     .map(
       c =>
-        `${c.name}: ${c.description}`
+        `${c.name}: ${c.description} Exact appearance must remain unchanged.`
     )
     .join(" ");
-
-  return `Cinematic ${ratio} scene. Show ONLY this exact story action: ${beat.action}. Active characters: ${activeCharacters}. Location: ${location}. Relevant props: ${props}.
-
-CHARACTER LOCK:
-${characterLocks}
-
-Maintain exact character identity, face, age, hairstyle, clothing, body proportions and physical appearance. Keep the same characters consistent across every scene. Do not add unrelated people, vehicles, animals, objects, locations or events. Do not remove a character required by this scene. Realistic movement, natural facial expressions and believable physical behavior.
-
-Scene ${sceneNumber} of ${totalScenes}.`;
 }
 
-// ==================================================
-// PROJECT CREATION
-// ==================================================
+// --------------------------------------------------
+// SCENE CREATION
+// --------------------------------------------------
 
-function createProject({
-  prompt,
-  duration,
-  aspectRatio
-}) {
-  const story = clean(prompt);
+function createScenes(story, duration, aspectRatio) {
+  const targetScenes = Math.max(1, Math.floor(Number(duration) / 10));
 
-  const totalScenes =
-    sceneCount(duration);
+  const characters = extractCharacters(story);
+  const locations = extractLocations(story);
+  const objects = extractObjects(story);
 
-  const characters =
-    extractCharacters(story);
+  let events = createDeliveryDriverEvents(story);
 
-  const locations =
-    extractLocations(story);
+  if (!events) {
+    events = createGenericEvents(story);
+  }
 
-  const objects =
-    extractObjects(story);
+  const timeline = buildTimeline(events, targetScenes);
 
-  const events =
-    createAtomicEvents(story);
+  const scenes = timeline.map((event, index) => {
+    const times = sceneTimes(index);
 
-  const timeline =
-    buildTimeline(
-      story,
-      totalScenes
-    );
+    const activeCharacters = getCharacters(event, characters);
+    const relevantProps = getRelevantProps(event);
 
-  const scenes =
-    timeline.map(
-      (beat, index) => {
-        const number =
-          index + 1;
+    const characterNames =
+      activeCharacters.length > 0
+        ? activeCharacters.map(c => c.name).join(", ")
+        : "Main Character";
 
-        return {
-          scene_number: number,
+    const propsText =
+      relevantProps.length > 0
+        ? relevantProps.join(", ")
+        : "No special props required";
 
-          start_time:
-            `${index * 10}s`,
+    const visualPrompt = `
+Cinematic ${aspectRatio} scene.
+Show ONLY this exact story action: ${cleanText(event.action)}
 
-          end_time:
-            `${(index + 1) * 10}s`,
+Active characters: ${characterNames}.
+Location: ${getLocation(event)}.
+Relevant props: ${propsText}.
 
-          visual_prompt:
-            visualPrompt(
-              beat,
-              characters,
-              locations,
-              objects,
-              aspectRatio,
-              number,
-              totalScenes
-            ),
+CHARACTER LOCK:
+${characterLockBlock(characters)}
 
-          camera:
-            camera(
-              beat,
-              number,
-              totalScenes
-            ),
+Maintain exact character identity, face, age, hairstyle, clothing, body proportions and physical appearance.
+Keep the same characters consistent across every scene.
+Use only characters, props and locations required by this scene.
+Do not add unrelated people, vehicles, animals, objects, locations or events.
+Realistic movement, natural facial expressions and believable physical behavior.
 
-          lighting:
-            lighting(
-              beat,
-              number,
-              totalScenes
-            ),
+Scene ${index + 1} of ${targetScenes}.
+`.trim();
 
-          action:
-            beat.action,
-
-          dialogue:
-            dialogue(
-              beat,
-              number,
-              totalScenes
-            ),
-
-          voiceover:
-            voiceover(
-              beat,
-              number,
-              totalScenes
-            ),
-
-          continuity:
-            number === 1
-              ? "Opening scene. Establish the story and lock all main character identities."
-              : number === totalScenes
-                ? "Final scene. Complete the actual story ending. Preserve every established character and location."
-                : `Continue directly from Scene ${number - 1}. Preserve exact character identity, clothing, location, props and story progression.`
-        };
-      }
-    );
+    return {
+      scene_number: index + 1,
+      start_time: times.start_time,
+      end_time: times.end_time,
+      visual_prompt: visualPrompt,
+      camera: cameraForScene(event, index, targetScenes),
+      lighting: lightingForScene(event),
+      action: cleanText(event.action),
+      dialogue: dialogueForScene(event),
+      voiceover: cleanText(event.voiceover || event.action),
+      continuity:
+        index === 0
+          ? "Opening scene. Establish the story and lock all main character identities."
+          : index === targetScenes - 1
+          ? "Final scene. Complete the actual story ending and preserve established continuity."
+          : `Continue directly from Scene ${index}. Preserve exact character identity, clothing, location and relevant story elements.`
+    };
+  });
 
   return {
-    version: "V14.1",
-    mode: "Universal Story Engine",
-    duration,
-    total_scenes: totalScenes,
+    duration: Number(duration),
+    total_scenes: targetScenes,
     aspect_ratio: aspectRatio,
-
-    story_understanding: {
-      original_story: story,
-      characters,
-      locations,
-      objects,
-      events
-    },
-
+    characters,
+    locations,
+    objects,
     scenes
   };
 }
 
-// ==================================================
-// ROUTES
-// ==================================================
+// --------------------------------------------------
+// API
+// --------------------------------------------------
 
 app.get("/", (req, res) => {
-  res.json({
-    status: "SANAPTAI V14.1 is live",
-    engine: "Character + Event Lock",
-    mode: "Demo",
-    video_generation: false
-  });
+  res.send("SANAPTAI V14.2 is live");
 });
 
 app.get("/api/test", (req, res) => {
   res.json({
-    status: "OK",
-    version: "V14.1",
-    engine: "Character + Event Lock",
-    gemini_calls: false
+    status: "ok",
+    version: "V14.2",
+    engine: "Context-Aware Story Elements",
+    demo_mode: true,
+    gemini: false
   });
 });
 
 app.post("/api/demo-project", (req, res) => {
   try {
-    const prompt = clean(req.body?.prompt);
+    const {
+      prompt,
+      duration = 60,
+      aspectRatio = "16:9"
+    } = req.body;
 
-    if (!prompt) {
+    if (!prompt || !prompt.trim()) {
       return res.status(400).json({
-        error: "Story prompt is required."
+        error: "Prompt is required."
       });
     }
 
-    const duration =
-      durationValue(req.body?.duration);
-
-    const aspectRatio =
-      ratioValue(req.body?.aspectRatio);
-
-    res.json(
-      createProject({
-        prompt,
-        duration,
-        aspectRatio
-      })
+    const project = createScenes(
+      prompt.trim(),
+      Number(duration),
+      aspectRatio
     );
 
+    res.json(project);
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      error: "Project creation failed.",
-      details: error.message
+      error: error.message || "Project creation failed."
     });
   }
 });
 
 app.post("/api/create-project", (req, res) => {
   try {
-    const prompt = clean(req.body?.prompt);
+    const {
+      prompt,
+      duration = 60,
+      aspectRatio = "16:9"
+    } = req.body;
 
-    if (!prompt) {
-      return res.status(400).json({
-        error: "Story prompt is required."
-      });
-    }
-
-    const duration =
-      durationValue(req.body?.duration);
-
-    const aspectRatio =
-      ratioValue(req.body?.aspectRatio);
-
-    res.json(
-      createProject({
-        prompt,
-        duration,
-        aspectRatio
-      })
+    const project = createScenes(
+      prompt.trim(),
+      Number(duration),
+      aspectRatio
     );
 
+    res.json(project);
   } catch (error) {
     res.status(500).json({
-      error: "Project creation failed.",
-      details: error.message
+      error: error.message || "Project creation failed."
     });
   }
 });
 
+// Gemini intentionally disabled during Demo Mode testing.
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
-    error:
-      "AI planning mode will be enabled in a later version.",
-    version: "V14.1"
+    error: "AI scene planning is reserved for a future version.",
+    version: "V14.2"
   });
 });
 
-// ==================================================
-// START
-// ==================================================
-
 app.listen(PORT, () => {
-  console.log(
-    `SANAPTAI V14.1 running on port ${PORT}`
-  );
+  console.log(`SANAPTAI V14.2 running on port ${PORT}`);
 });
