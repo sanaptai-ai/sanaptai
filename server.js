@@ -73,44 +73,98 @@ app.post('/api/demo-project', (req, res) => {
     const totalSeconds = Number(duration) || 10;
     const totalScenes = Math.ceil(totalSeconds / 10);
 
+    const characterLock = {
+        name: "Main Character",
+        description:
+            "Young adult man, 25 years old, athletic build, medium skin tone, " +
+            "short dark hair, brown eyes, light stubble, wearing a dark jacket, " +
+            "black shirt, dark jeans and black boots. Keep the exact same face, " +
+            "hair, clothing, body proportions and accessories in every scene."
+    };
+
+    const sceneIdeas = [
+        "The main character enters the environment and notices something unusual.",
+        "The main character moves closer and carefully investigates what he discovered.",
+        "The main character reacts to the discovery and makes an important decision.",
+        "The main character takes action and moves toward the next part of the story.",
+        "The main character faces a new obstacle and tries to overcome it.",
+        "The main character discovers an important clue that changes the situation.",
+        "The main character prepares himself and continues deeper into the situation.",
+        "The main character reaches a critical moment and takes a decisive action.",
+        "The main character deals with the consequence of his decision.",
+        "The main character reaches an emotional turning point.",
+        "The main character discovers the final important detail.",
+        "The main character completes the immediate objective and looks toward the future."
+    ];
+
     const scenes = [];
 
     for (let i = 1; i <= totalScenes; i++) {
+
+        const idea = sceneIdeas[(i - 1) % sceneIdeas.length];
+
         scenes.push({
+
             scene: i,
+
             start: (i - 1) * 10,
+
             end: i * 10,
+
             duration: 10,
 
             visual_prompt:
-                `Cinematic video scene based on: ${prompt}. ` +
-                `Maintain consistent characters, environment, lighting and visual style.`,
+                `${characterLock.description} ` +
+                `The story is based on: "${prompt}". ` +
+                `${idea} ` +
+                `Create a cinematic, detailed, realistic environment with strong visual continuity. ` +
+                `Do not change the character's identity, clothing or appearance.`,
 
-            camera: "Cinematic medium shot with smooth tracking movement.",
+            camera:
+                i === 1
+                    ? "Wide establishing shot followed by a slow cinematic push-in."
+                    : "Medium tracking shot following the character's movement.",
 
-            lighting: "Natural cinematic lighting matching the environment.",
+            lighting:
+                "Cinematic lighting that remains consistent with the environment, time and mood.",
 
             action:
-                "The character performs the main action naturally and continuously.",
+                `${idea} The action must be physically realistic and completed within 10 seconds.`,
 
-            dialogue: "",
+            dialogue:
+                i === 1
+                    ? "What is that?"
+                    : "",
 
-            voiceover: "",
+            voiceover:
+                i === 1
+                    ? "Something unexpected was about to change everything."
+                    : "",
 
             continuity:
-                "Continue directly from the previous scene while maintaining visual and character consistency."
+                i === 1
+                    ? "Opening scene establishes the character, environment and story situation."
+                    : `Continue directly from Scene ${i - 1}. Keep the same character, location, clothing, props, lighting and emotional state.`
         });
     }
 
     res.json({
+
         status: 'success',
+
         message: 'Demo project created successfully',
+
         project: {
+
             duration: totalSeconds,
+
             sceneDuration: 10,
-            totalScenes,
-            characterLocks: [],
-            scenes
+
+            totalScenes: totalScenes,
+
+            characterLocks: [characterLock],
+
+            scenes: scenes
         }
     });
 });
