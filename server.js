@@ -6,1420 +6,1330 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
 
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+  : null;
 
-/* =========================================================
-   BASIC TEST
-========================================================= */
+// ============================================================
+// SANAPTAI V9 — STORY + CHARACTER + EVENT + CONTINUITY ENGINE
+// ============================================================
+
+function cleanText(text = "") {
+  return String(text)
+    .replace(/\s+/g, " ")
+    .replace(/[“”]/g, '"')
+    .trim();
+}
+
+function splitSentences(text = "") {
+  return cleanText(text)
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function has(text, words) {
+  const t = text.toLowerCase();
+  return words.some(w => t.includes(w.toLowerCase()));
+}
+
+function unique(arr) {
+  return [...new Set(arr.filter(Boolean))];
+}
+
+function durationToSeconds(duration) {
+  const d = String(duration || "30 sec").toLowerCase();
+
+  if (d.includes("20")) return 1200;
+  if (d.includes("10 min")) return 600;
+  if (d.includes("5 min")) return 300;
+  if (d.includes("1 min")) return 60;
+  if (d.includes("60")) return 60;
+  if (d.includes("30")) return 30;
+  return 10;
+}
+
+function createSceneCount(seconds) {
+  return Math.max(1, Math.ceil(seconds / 10));
+}
+
+// ------------------------------------------------------------
+// CHARACTER PARSER
+// ------------------------------------------------------------
+
+function detectCharacters(story) {
+  const t = story.toLowerCase();
+  const characters = [];
+
+  if (
+    t.includes("young boy") ||
+    t.includes("little boy") ||
+    t.includes("12-year-old boy") ||
+    t.includes("12 year old boy")
+  ) {
+    characters.push({
+      id: "main_boy",
+      role: "main character",
+      description:
+        "12-year-old boy, warm natural skin tone, round youthful face, dark brown eyes, short slightly messy black hair, slim child body, sky-blue T-shirt, dark blue jeans and white sneakers"
+    });
+  } else if (/\bboy\b/.test(t)) {
+    characters.push({
+      id: "main_boy",
+      role: "main character",
+      description:
+        "young boy with a natural youthful face, short slightly messy black hair, slim child body, simple casual clothing"
+    });
+  }
+
+  if (
+    t.includes("young girl") ||
+    t.includes("little girl") ||
+    t.includes("12-year-old girl") ||
+    t.includes("12 year old girl")
+  ) {
+    characters.push({
+      id: "main_girl",
+      role: "main character",
+      description:
+        "12-year-old girl with a youthful face, dark eyes, shoulder-length dark hair, slim child body, simple casual clothing"
+    });
+  } else if (/\bgirl\b/.test(t)) {
+    characters.push({
+      id: "main_girl",
+      role: "main character",
+      description:
+        "young girl with a youthful face, dark hair, slim child body, simple casual clothing"
+    });
+  }
+
+  if (has(t, ["mother", "mom", "mum"])) {
+    characters.push({
+      id: "mother",
+      role: "supporting character",
+      description:
+        "35-year-old woman, warm natural face, medium-length dark hair, simple everyday clothing"
+    });
+  }
+
+  if (has(t, ["father", "dad"])) {
+    characters.push({
+      id: "father",
+      role: "supporting character",
+      description:
+        "40-year-old man, natural face, short dark hair, average build, simple everyday clothing"
+    });
+  }
+
+  if (has(t, ["teacher", "school teacher"])) {
+    characters.push({
+      id: "teacher",
+      role: "supporting character",
+      description:
+        "adult school teacher, professional appearance, simple teacher clothing"
+    });
+  }
+
+  if (has(t, ["friend", "best friend"])) {
+    characters.push({
+      id: "friend",
+      role: "supporting character",
+      description:
+        "same supporting friend throughout the entire video, youthful appearance, consistent hairstyle and clothing"
+    });
+  }
+
+  if (has(t, ["owner", "pet owner"])) {
+    characters.push({
+      id: "pet_owner",
+      role: "supporting character",
+      description:
+        "adult pet owner, warm natural face, medium build, short dark hair, casual jacket and jeans, permanently consistent appearance"
+    });
+  }
+
+  if (has(t, ["villain", "enemy", "attacker"])) {
+    characters.push({
+      id: "villain",
+      role: "antagonist",
+      description:
+        "adult antagonist with consistent face, hairstyle, body proportions and dark practical clothing throughout the video"
+    });
+  }
+
+  return characters;
+}
+
+// ------------------------------------------------------------
+// ANIMAL PARSER
+// ------------------------------------------------------------
+
+function detectAnimals(story) {
+  const t = story.toLowerCase();
+  const animals = [];
+
+  if (has(t, ["kitten"])) {
+    animals.push({
+      id: "kitten",
+      description:
+        "small abandoned kitten with soft light-gray fur, white chest, white paws and expressive green eyes; identical appearance in every scene"
+    });
+  }
+
+  if (has(t, ["puppy", "dog"])) {
+    animals.push({
+      id: "puppy",
+      description:
+        "small friendly puppy with warm golden-brown fur, floppy ears and expressive dark eyes; identical appearance in every scene"
+    });
+  }
+
+  if (has(t, ["cat"])) {
+    animals.push({
+      id: "cat",
+      description:
+        "same domestic cat throughout the entire video, consistent fur pattern, eye color and body size"
+    });
+  }
+
+  if (has(t, ["horse"])) {
+    animals.push({
+      id: "horse",
+      description:
+        "same horse throughout the video, consistent coat color, markings and body proportions"
+    });
+  }
+
+  if (has(t, ["rabbit"])) {
+    animals.push({
+      id: "rabbit",
+      description:
+        "same small rabbit throughout the video, consistent fur color and markings"
+    });
+  }
+
+  if (has(t, ["bird"])) {
+    animals.push({
+      id: "bird",
+      description:
+        "same small bird throughout the video, consistent feather colors and markings"
+    });
+  }
+
+  if (has(t, ["snake"])) {
+    animals.push({
+      id: "snake",
+      description:
+        "same snake throughout the video, consistent scale pattern, body size and color"
+    });
+  }
+
+  return animals;
+}
+
+// ------------------------------------------------------------
+// LOCATION PARSER
+// ------------------------------------------------------------
+
+function detectLocations(story) {
+  const t = story.toLowerCase();
+  const locations = [];
+
+  if (has(t, ["school", "classroom"])) {
+    locations.push("school environment");
+  }
+
+  if (has(t, ["street", "road", "sidewalk"])) {
+    locations.push("same city street and sidewalk");
+  }
+
+  if (has(t, ["city", "downtown"])) {
+    locations.push("same busy city environment");
+  }
+
+  if (has(t, ["park"])) {
+    locations.push("same public park");
+  }
+
+  if (has(t, ["forest", "woods"])) {
+    locations.push("same forest environment");
+  }
+
+  if (has(t, ["home", "house", "bedroom", "room"])) {
+    locations.push("same home interior");
+  }
+
+  if (has(t, ["office"])) {
+    locations.push("same office environment");
+  }
+
+  if (has(t, ["hospital"])) {
+    locations.push("same hospital environment");
+  }
+
+  if (has(t, ["village"])) {
+    locations.push("same village environment");
+  }
+
+  if (has(t, ["mountain", "mountains"])) {
+    locations.push("same mountain environment");
+  }
+
+  if (locations.length === 0) {
+    locations.push("story-appropriate primary location");
+  }
+
+  return unique(locations);
+}
+
+// ------------------------------------------------------------
+// OBJECT PARSER
+// ------------------------------------------------------------
+
+function detectObjects(story) {
+  const t = story.toLowerCase();
+  const objects = [];
+
+  const map = [
+    [["poster", "missing-pet poster"], "missing-pet poster"],
+    [["shelter", "broken shelter"], "broken shelter"],
+    [["collar"], "pet collar"],
+    [["food", "pet food"], "pet food bowl"],
+    [["towel", "dry"], "towel"],
+    [["umbrella"], "umbrella"],
+    [["phone", "mobile"], "mobile phone"],
+    [["letter"], "letter"],
+    [["photo", "picture"], "photograph"],
+    [["backpack", "school bag"], "school backpack"],
+    [["key"], "key"],
+    [["car", "vehicle", "truck"], "story vehicle"]
+  ];
+
+  for (const [words, objectName] of map) {
+    if (has(t, words)) objects.push(objectName);
+  }
+
+  return unique(objects);
+}
+
+// ------------------------------------------------------------
+// CONDITION PARSER
+// ------------------------------------------------------------
+
+function detectConditions(story) {
+  const t = story.toLowerCase();
+  const conditions = [];
+
+  if (has(t, ["rain", "rainstorm", "raining", "storm"])) {
+    conditions.push("sudden rainstorm");
+  }
+
+  if (has(t, ["snow", "snowstorm"])) {
+    conditions.push("snowy weather");
+  }
+
+  if (has(t, ["night", "midnight"])) {
+    conditions.push("nighttime");
+  }
+
+  if (has(t, ["evening", "sunset"])) {
+    conditions.push("evening light");
+  }
+
+  if (has(t, ["morning", "sunrise"])) {
+    conditions.push("morning light");
+  }
+
+  if (has(t, ["dark"])) {
+    conditions.push("dark atmospheric conditions");
+  }
+
+  return unique(conditions);
+}
+
+// ------------------------------------------------------------
+// STORY EVENT PARSER
+// ------------------------------------------------------------
+
+function detectEvents(story) {
+  const sentences = splitSentences(story);
+  const events = [];
+
+  for (const sentence of sentences) {
+    const s = sentence.toLowerCase();
+
+    if (
+      has(s, [
+        "walking home from school",
+        "walks home from school",
+        "walking home",
+        "walk home"
+      ])
+    ) {
+      events.push({
+        type: "journey",
+        text: "The main character walks home from school."
+      });
+    }
+
+    if (
+      has(s, [
+        "rainstorm begins",
+        "rain begins",
+        "starts raining",
+        "sudden rain",
+        "caught in the rain"
+      ])
+    ) {
+      events.push({
+        type: "weather",
+        text: "A sudden rainstorm begins."
+      });
+    }
+
+    if (
+      has(s, [
+        "finds",
+        "found",
+        "discovers",
+        "sees"
+      ])
+    ) {
+      events.push({
+        type: "discovery",
+        text: sentence
+      });
+    }
+
+    if (
+      has(s, [
+        "abandoned kitten",
+        "lost kitten",
+        "lost cat"
+      ])
+    ) {
+      events.push({
+        type: "animal_discovery",
+        text: "The main character finds the abandoned kitten."
+      });
+    }
+
+    if (
+      has(s, [
+        "abandoned puppy",
+        "lost puppy",
+        "lost dog"
+      ])
+    ) {
+      events.push({
+        type: "animal_discovery",
+        text: "The main character finds the lost puppy."
+      });
+    }
+
+    if (
+      has(s, [
+        "decides to protect",
+        "protects",
+        "save",
+        "rescues",
+        "rescue"
+      ])
+    ) {
+      events.push({
+        type: "rescue",
+        text: sentence
+      });
+    }
+
+    if (
+      has(s, [
+        "carries",
+        "takes home",
+        "brings home",
+        "carry home"
+      ])
+    ) {
+      events.push({
+        type: "transport",
+        text: sentence
+      });
+    }
+
+    if (
+      has(s, [
+        "dries",
+        "dry the",
+        "dried"
+      ])
+    ) {
+      events.push({
+        type: "care",
+        text: "The main character dries the rescued animal."
+      });
+    }
+
+    if (
+      has(s, [
+        "gives it food",
+        "gives food",
+        "feeds",
+        "feeding",
+        "food"
+      ])
+    ) {
+      events.push({
+        type: "feeding",
+        text: "The main character feeds the animal."
+      });
+    }
+
+    if (
+      has(s, [
+        "missing-pet poster",
+        "missing pet poster",
+        "poster"
+      ])
+    ) {
+      events.push({
+        type: "clue",
+        text: "A missing-pet poster provides a clue to the animal's owner."
+      });
+    }
+
+    if (
+      has(s, [
+        "owner",
+        "reunite",
+        "reunites",
+        "reunited",
+        "reunion"
+      ])
+    ) {
+      events.push({
+        type: "reunion",
+        text: "The animal is reunited with its owner."
+      });
+    }
+
+    if (
+      has(s, [
+        "searches",
+        "search",
+        "looks for",
+        "find the owner"
+      ])
+    ) {
+      events.push({
+        type: "search",
+        text: sentence
+      });
+    }
+
+    if (
+      has(s, [
+        "runs away",
+        "runs off",
+        "escapes",
+        "chase",
+        "chases"
+      ])
+    ) {
+      events.push({
+        type: "chase",
+        text: sentence
+      });
+    }
+
+    if (
+      has(s, [
+        "builds",
+        "build",
+        "constructs",
+        "construction"
+      ])
+    ) {
+      events.push({
+        type: "building",
+        text: sentence
+      });
+    }
+
+    if (
+      has(s, [
+        "falls",
+        "gets hurt",
+        "injured",
+        "danger"
+      ])
+    ) {
+      events.push({
+        type: "danger",
+        text: sentence
+      });
+    }
+  }
+
+  return events;
+}
+
+// ------------------------------------------------------------
+// SPECIAL STORY SEQUENCES
+// ------------------------------------------------------------
+
+function buildSpecialSequence(story) {
+  const t = story.toLowerCase();
+
+  // Lost kitten + rain + owner + poster
+  if (
+    t.includes("kitten") &&
+    t.includes("owner") &&
+    t.includes("poster") &&
+    has(t, ["rain", "rainstorm"])
+  ) {
+    return [
+      {
+        type: "journey_weather",
+        text: "The boy walks home from school when a sudden rainstorm begins."
+      },
+      {
+        type: "kitten_discovery",
+        text: "The boy finds an abandoned kitten under a broken shelter."
+      },
+      {
+        type: "protection",
+        text: "The boy decides to protect the kitten from the rain."
+      },
+      {
+        type: "home_care",
+        text: "The boy carries the kitten home, dries it and gives it food."
+      },
+      {
+        type: "poster_clue",
+        text: "The boy discovers a missing-pet poster and identifies the kitten's owner."
+      },
+      {
+        type: "reunion",
+        text: "The boy reunites the kitten with its owner."
+      }
+    ];
+  }
+
+  // Lost puppy + owner
+  if (
+    has(t, ["puppy", "dog"]) &&
+    t.includes("owner") &&
+    has(t, ["lost", "missing"])
+  ) {
+    return [
+      {
+        type: "discovery",
+        text: "The main character notices the lost puppy."
+      },
+      {
+        type: "rescue",
+        text: "The main character approaches the puppy and keeps it safe."
+      },
+      {
+        type: "clue",
+        text: "The main character searches for information that can identify the owner."
+      },
+      {
+        type: "search",
+        text: "The main character follows the available clue to find the owner."
+      },
+      {
+        type: "reunion",
+        text: "The puppy is reunited with its owner."
+      }
+    ];
+  }
+
+  return null;
+}
+
+// ------------------------------------------------------------
+// STORY UNDERSTANDING
+// ------------------------------------------------------------
+
+function understandStory(story) {
+  const characters = detectCharacters(story);
+  const animals = detectAnimals(story);
+  const locations = detectLocations(story);
+  const objects = detectObjects(story);
+  const conditions = detectConditions(story);
+  const events = detectEvents(story);
+  const specialSequence = buildSpecialSequence(story);
+
+  let goal = "Complete the main objective described by the story.";
+  let conflict = "The main character must overcome the challenge described by the story.";
+
+  const t = story.toLowerCase();
+
+  if (t.includes("reunite") || t.includes("owner")) {
+    goal = "Find the animal's owner and complete the reunion.";
+  } else if (has(t, ["rescue", "save", "protect"])) {
+    goal = "Protect or rescue the person or animal in danger.";
+  } else if (has(t, ["build", "construct"])) {
+    goal = "Complete the building or construction objective.";
+  } else if (has(t, ["find", "discover", "search"])) {
+    goal = "Find the important person, object or answer described in the story.";
+  }
+
+  if (has(t, ["rain", "storm", "snow"])) {
+    conflict = "Severe weather creates an obstacle.";
+  } else if (has(t, ["lost", "abandoned", "missing"])) {
+    conflict = "Someone or something is lost or separated.";
+  } else if (has(t, ["villain", "enemy", "danger", "attacker"])) {
+    conflict = "A dangerous opposing force creates the main obstacle.";
+  }
+
+  return {
+    characters,
+    animals,
+    locations,
+    objects,
+    conditions,
+    events,
+    specialSequence,
+    goal,
+    conflict,
+    climax:
+      specialSequence?.find(e =>
+        ["poster_clue", "reunion"].includes(e.type)
+      )?.text || "The main story objective reaches its decisive moment.",
+    resolution:
+      specialSequence?.find(e => e.type === "reunion")?.text ||
+      "The story reaches a natural resolution."
+  };
+}
+
+// ------------------------------------------------------------
+// CHARACTER LOCK
+// ------------------------------------------------------------
+
+function buildCharacterLock(understanding) {
+  const lines = [];
+
+  for (const c of understanding.characters) {
+    lines.push(
+      `${c.role.toUpperCase()}: ${c.description}. This identity is permanent throughout the entire video. Never change face, age, hairstyle, hair color, eye color, skin tone, body proportions or clothing.`
+    );
+  }
+
+  for (const a of understanding.animals) {
+    lines.push(
+      `ANIMAL LOCK: ${a.id}: ${a.description}. Never change fur/feather/scale pattern, color, eyes, body size or markings.`
+    );
+  }
+
+  if (!lines.length) {
+    lines.push(
+      "CHARACTER LOCK: Any character introduced in Scene 1 must remain visually identical throughout the entire video."
+    );
+  }
+
+  return lines.join(" ");
+}
+
+// ------------------------------------------------------------
+// STORY ELEMENT LOCK
+// ------------------------------------------------------------
+
+function buildStoryElementLock(understanding) {
+  const parts = [];
+
+  if (understanding.locations.length) {
+    parts.push(
+      `LOCATIONS: ${understanding.locations.join(", ")}. Keep geography and recognizable details consistent.`
+    );
+  }
+
+  if (understanding.objects.length) {
+    parts.push(
+      `OBJECTS: ${understanding.objects.join(", ")}. Keep appearance, size, color and physical details consistent.`
+    );
+  }
+
+  if (understanding.conditions.length) {
+    parts.push(
+      `CONDITIONS: ${understanding.conditions.join(", ")}. Maintain logical weather and time continuity.`
+    );
+  }
+
+  return parts.join(" ");
+}
+
+// ------------------------------------------------------------
+// DIALOGUE ENGINE
+// ------------------------------------------------------------
+
+function dialogueFor(type, story) {
+  const t = story.toLowerCase();
+
+  if (type === "journey_weather") {
+    return "I need to get home before this gets worse.";
+  }
+
+  if (type === "kitten_discovery") {
+    return "Wait... there's a kitten under there.";
+  }
+
+  if (type === "protection") {
+    return "Come on, little one. I'll keep you safe.";
+  }
+
+  if (type === "home_care") {
+    return "Let's get you warm, dry, and fed.";
+  }
+
+  if (type === "poster_clue") {
+    return "Wait... this missing-pet poster is you.";
+  }
+
+  if (type === "reunion") {
+    return "We found your kitten. She's safe.";
+  }
+
+  if (type === "discovery") {
+    return "Wait... what is that?";
+  }
+
+  if (type === "rescue") {
+    return "Stay with me. I'll get you somewhere safe.";
+  }
+
+  if (type === "transport") {
+    return "Come on. We're getting out of here.";
+  }
+
+  if (type === "care") {
+    return "You're safe now. Just get comfortable.";
+  }
+
+  if (type === "feeding") {
+    return "Here you go. You must be hungry.";
+  }
+
+  if (type === "clue") {
+    return "This could be the clue I've been looking for.";
+  }
+
+  if (type === "search") {
+    return "Let's follow this clue and find them.";
+  }
+
+  if (type === "chase") {
+    return "Stop! I've got to catch up!";
+  }
+
+  if (type === "building") {
+    return "One step at a time. We can finish this.";
+  }
+
+  if (type === "danger") {
+    return "Stay behind me. I'll handle this.";
+  }
+
+  if (type === "journey") {
+    return "I just need to keep moving.";
+  }
+
+  return "I know what I need to do.";
+}
+
+// ------------------------------------------------------------
+// VOICEOVER ENGINE
+// ------------------------------------------------------------
+
+function voiceoverFor(type) {
+  const map = {
+    journey_weather:
+      "A simple walk home suddenly became a race against the storm.",
+
+    kitten_discovery:
+      "Beneath the broken shelter, he discovered a tiny abandoned kitten.",
+
+    protection:
+      "Instead of walking away, he chose to protect the helpless animal.",
+
+    home_care:
+      "He carried the kitten home, dried her carefully, and gave her food.",
+
+    poster_clue:
+      "Then a missing-pet poster revealed a possible path back to her owner.",
+
+    reunion:
+      "After the search, the kitten finally returned to the person who had been looking for her.",
+
+    discovery:
+      "Something unexpected caught the main character's attention.",
+
+    rescue:
+      "The main character chooses to step in and help.",
+
+    transport:
+      "The next step is to move the rescued character or object to safety.",
+
+    care:
+      "The situation becomes safer as the main character provides care.",
+
+    feeding:
+      "A small act of kindness helps the rescued animal recover.",
+
+    clue:
+      "An important clue changes the direction of the story.",
+
+    search:
+      "The search continues using the new information.",
+
+    chase:
+      "The situation suddenly becomes more urgent.",
+
+    building:
+      "The main character keeps working toward the goal.",
+
+    danger:
+      "A dangerous moment forces the main character to act quickly.",
+
+    journey:
+      "The main character continues toward the story's objective."
+  };
+
+  return map[type] || "The story moves forward as the main character faces the next challenge.";
+}
+
+// ------------------------------------------------------------
+// VISUAL PROMPT ENGINE
+// ------------------------------------------------------------
+
+function visualFor(event, understanding, sceneNumber, totalScenes, aspectRatio) {
+  const characterLock = buildCharacterLock(understanding);
+  const elementLock = buildStoryElementLock(understanding);
+
+  return [
+    `MASTER CHARACTER LOCK: ${characterLock}`,
+    `STORY ELEMENT LOCK: ${elementLock}`,
+    `ORIGINAL USER STORY: "${cleanText(understanding.originalStory || "")}"`,
+    `SCENE ${sceneNumber} OF ${totalScenes}.`,
+    `STORY EVENT: ${event.text}`,
+    "This scene must visually show the actual story event above. Do not substitute a generic event.",
+    "Use only story-relevant characters, animals, objects and locations.",
+    "Natural cinematic movement, realistic facial expressions, believable physics, detailed production design and cinematic movie quality.",
+    `Aspect ratio: ${aspectRatio}.`,
+    "Exactly 10 seconds of continuous visual storytelling."
+  ].join(" ");
+}
+
+// ------------------------------------------------------------
+// CAMERA
+// ------------------------------------------------------------
+
+function cameraFor(type) {
+  if (["reunion", "poster_clue", "protection"].includes(type)) {
+    return "Cinematic medium shot with a slow emotional push-in, followed by natural character movement.";
+  }
+
+  if (["journey_weather", "journey"].includes(type)) {
+    return "Natural cinematic tracking shot following the main character through the environment.";
+  }
+
+  if (["discovery", "kitten_discovery", "clue"].includes(type)) {
+    return "Wide establishing shot followed by a smooth cinematic push toward the important story element.";
+  }
+
+  if (["chase", "danger"].includes(type)) {
+    return "Dynamic handheld-style cinematic tracking shot with controlled motion and clear subject framing.";
+  }
+
+  return "Natural cinematic medium shot following the main action.";
+}
+
+// ------------------------------------------------------------
+// LIGHTING
+// ------------------------------------------------------------
+
+function lightingFor(understanding, type) {
+  if (type === "journey_weather" || understanding.conditions.includes("sudden rainstorm")) {
+    return "Natural overcast storm lighting, realistic wet surfaces, soft shadows and consistent rainy atmosphere.";
+  }
+
+  if (understanding.conditions.includes("nighttime")) {
+    return "Cinematic nighttime lighting with realistic practical lights and controlled shadows.";
+  }
+
+  if (understanding.conditions.includes("evening light")) {
+    return "Warm cinematic evening light with consistent long shadows.";
+  }
+
+  return "Natural cinematic lighting with realistic shadows and consistent time-of-day continuity.";
+}
+
+// ------------------------------------------------------------
+// ACTION
+// ------------------------------------------------------------
+
+function actionFor(event) {
+  return `${event.text} Complete the action naturally within exactly 10 seconds. Avoid unrelated actions.`;
+}
+
+// ------------------------------------------------------------
+// SCENE GENERATOR
+// ------------------------------------------------------------
+
+function buildScenes(story, duration, aspectRatio) {
+  const seconds = durationToSeconds(duration);
+  const totalScenes = createSceneCount(seconds);
+
+  const understanding = understandStory(story);
+  understanding.originalStory = story;
+
+  let sequence = understanding.specialSequence;
+
+  if (!sequence || sequence.length === 0) {
+    sequence = understanding.events.map(e => ({
+      type: e.type,
+      text: e.text
+    }));
+  }
+
+  if (sequence.length === 0) {
+    sequence = [
+      {
+        type: "journey",
+        text: "The main character begins the story and moves toward the main objective."
+      },
+      {
+        type: "discovery",
+        text: "The main character encounters the central situation described in the story."
+      },
+      {
+        type: "conflict",
+        text: "The main challenge becomes clear."
+      },
+      {
+        type: "rescue",
+        text: "The main character takes action to solve the problem."
+      },
+      {
+        type: "clue",
+        text: "New information helps move the story toward its objective."
+      },
+      {
+        type: "reunion",
+        text: "The main objective reaches a natural resolution."
+      }
+    ];
+  }
+
+  // For short videos, preserve the most important story events.
+  // For longer videos, repeat no event unnecessarily; distribute story events
+  // across the available 10-second scenes.
+  let selectedEvents = [];
+
+  if (totalScenes <= sequence.length) {
+    selectedEvents = sequence.slice(0, totalScenes);
+  } else {
+    selectedEvents = [...sequence];
+
+    while (selectedEvents.length < totalScenes) {
+      const index = selectedEvents.length % sequence.length;
+      const base = sequence[index];
+
+      selectedEvents.push({
+        type: base.type,
+        text: `${base.text} The scene continues naturally, showing the immediate consequence of this event.`
+      });
+    }
+  }
+
+  const scenes = selectedEvents.map((event, index) => {
+    const sceneNumber = index + 1;
+    const start = index * 10;
+    const end = start + 10;
+
+    return {
+      scene_number: sceneNumber,
+      start_time: `${start}s`,
+      end_time: `${end}s`,
+      duration: 10,
+
+      event_type: event.type,
+      story_event: event.text,
+
+      visual_prompt: visualFor(
+        event,
+        understanding,
+        sceneNumber,
+        totalScenes,
+        aspectRatio
+      ),
+
+      camera: cameraFor(event.type),
+
+      lighting: lightingFor(understanding, event.type),
+
+      action: actionFor(event),
+
+      dialogue: dialogueFor(event.type, story),
+
+      voiceover: voiceoverFor(event.type),
+
+      continuity:
+        sceneNumber === 1
+          ? "Establish the permanent character identity, story elements, location, weather, time of day and starting situation."
+          : "Continue directly from the previous scene. Maintain the MASTER CHARACTER LOCK exactly. Keep all characters, animals, objects, locations, weather, lighting and physical details consistent. Begin from the previous scene's ending state."
+    };
+  });
+
+  return {
+    duration_seconds: seconds,
+    duration: `${seconds} seconds`,
+    total_scenes: totalScenes,
+    aspect_ratio: aspectRatio,
+    story_understanding: understanding,
+    scenes
+  };
+}
+
+// ------------------------------------------------------------
+// TEST
+// ------------------------------------------------------------
 
 app.get("/api/test", (req, res) => {
-    res.json({
-        status: "success",
-        message: "SANAPTAI V8 server is working"
-    });
+  res.json({
+    success: true,
+    message: "SANAPTAI V9 server is working"
+  });
 });
 
-
-/* =========================================================
-   V8 STORY PARSER
-   Demo mode
-   Gemini is NOT used here
-========================================================= */
+// ------------------------------------------------------------
+// DEMO PROJECT
+// NO GEMINI REQUEST
+// ------------------------------------------------------------
 
 app.post("/api/demo-project", (req, res) => {
-
-    const { prompt, duration, aspectRatio } = req.body;
-
-    if (!prompt || !prompt.trim()) {
-        return res.status(400).json({
-            error: "Video prompt is required"
-        });
-    }
-
-    const story = prompt.trim();
-    const lowerStory = story.toLowerCase();
-
-    const totalSeconds = Number(duration) || 10;
-    const totalScenes = Math.ceil(totalSeconds / 10);
-    const ratio = aspectRatio || "16:9";
-
-
-    /* =====================================================
-       HELPERS
-    ===================================================== */
-
-    function has(...words) {
-        return words.some(word => lowerStory.includes(word));
-    }
-
-    function unique(list) {
-        return [...new Set(list)];
-    }
-
-    function cleanSentence(text) {
-        return text
-            .replace(/\s+/g, " ")
-            .replace(/^[\s,.;:-]+/, "")
-            .trim();
-    }
-
-
-    /* =====================================================
-       SENTENCE PARSER
-    ===================================================== */
-
-    const rawSentences = story
-        .split(/[.!?]+/)
-        .map(cleanSentence)
-        .filter(Boolean);
-
-    const sentences =
-        rawSentences.length > 0
-            ? rawSentences
-            : [story];
-
-
-    /* =====================================================
-       CHARACTER UNDERSTANDING
-    ===================================================== */
-
-    const characters = [];
-
-    let mainCharacter = "young adult main character";
-
-    if (
-        has("young boy", "little boy", "12-year-old boy", "12 year old boy")
-    ) {
-        mainCharacter = "12-year-old boy";
-    } else if (
-        has("young girl", "little girl", "12-year-old girl", "12 year old girl")
-    ) {
-        mainCharacter = "12-year-old girl";
-    } else if (has("boy")) {
-        mainCharacter = "young boy";
-    } else if (has("girl")) {
-        mainCharacter = "young girl";
-    } else if (has("woman")) {
-        mainCharacter = "adult woman";
-    } else if (has("man")) {
-        mainCharacter = "adult man";
-    }
-
-    characters.push(mainCharacter);
-
-
-    /* Supporting characters */
-
-    if (has("owner", "pet owner")) {
-        characters.push("pet owner");
-    }
-
-    if (has("friend", "best friend")) {
-        characters.push("friend");
-    }
-
-    if (has("mother", "mom")) {
-        characters.push("mother");
-    }
-
-    if (has("father", "dad")) {
-        characters.push("father");
-    }
-
-    if (has("teacher")) {
-        characters.push("teacher");
-    }
-
-    if (has("villain", "enemy", "antagonist")) {
-        characters.push("antagonist");
-    }
-
-
-    /* Animals */
-
-    if (has("kitten")) {
-        characters.push("kitten");
-    }
-
-    if (has("puppy")) {
-        characters.push("puppy");
-    } else if (has("dog")) {
-        characters.push("dog");
-    }
-
-    if (has("cat")) {
-        characters.push("cat");
-    }
-
-    if (has("horse")) {
-        characters.push("horse");
-    }
-
-    if (has("bird")) {
-        characters.push("bird");
-    }
-
-    if (has("rabbit")) {
-        characters.push("rabbit");
-    }
-
-    if (has("snake")) {
-        characters.push("snake");
-    }
-
-    const uniqueCharacters = unique(characters);
-
-
-    /* =====================================================
-       LOCATION UNDERSTANDING
-===================================================== */
-
-    const locations = [];
-
-    if (has("school", "from school")) {
-        locations.push("school area");
-    }
-
-    if (has("street", "road", "sidewalk")) {
-        locations.push("street environment");
-    }
-
-    if (has("city", "busy city")) {
-        locations.push("busy city environment");
-    }
-
-    if (has("park")) {
-        locations.push("park");
-    }
-
-    if (has("forest", "woods")) {
-        locations.push("forest");
-    }
-
-    if (has("home", "house", "room")) {
-        locations.push("home");
-    }
-
-    if (has("hospital")) {
-        locations.push("hospital");
-    }
-
-    if (has("office")) {
-        locations.push("office");
-    }
-
-    if (has("village")) {
-        locations.push("village");
-    }
-
-    if (has("mountain")) {
-        locations.push("mountain area");
-    }
-
-    if (locations.length === 0) {
-        locations.push("story location established by the original story");
-    }
-
-    const uniqueLocations = unique(locations);
-
-
-    /* =====================================================
-       OBJECT UNDERSTANDING
-===================================================== */
-
-    const objects = [];
-
-    if (has("poster", "missing-pet poster", "missing pet poster")) {
-        objects.push("missing-pet poster");
-    }
-
-    if (has("collar")) {
-        objects.push("pet collar");
-    }
-
-    if (has("shelter", "broken shelter")) {
-        objects.push("broken shelter");
-    }
-
-    if (has("food", "feed", "feeding")) {
-        objects.push("pet food");
-    }
-
-    if (has("towel", "dry", "dries")) {
-        objects.push("towel");
-    }
-
-    if (has("umbrella")) {
-        objects.push("umbrella");
-    }
-
-    if (has("phone", "mobile")) {
-        objects.push("phone");
-    }
-
-    if (has("letter")) {
-        objects.push("letter");
-    }
-
-    if (has("photo", "picture")) {
-        objects.push("photograph");
-    }
-
-    if (has("car", "vehicle", "truck")) {
-        objects.push("vehicle mentioned in story");
-    }
-
-    if (has("key")) {
-        objects.push("key");
-    }
-
-    if (has("bag", "backpack")) {
-        objects.push("bag or backpack");
-    }
-
-    const uniqueObjects = unique(objects);
-
-
-    /* =====================================================
-       STORY CONDITIONS
-===================================================== */
-
-    const conditions = [];
-
-    if (has("rain", "rainstorm", "storm", "raining")) {
-        conditions.push("sudden rainstorm");
-    }
-
-    if (has("night", "nighttime", "evening")) {
-        conditions.push("nighttime or evening");
-    }
-
-    if (has("morning")) {
-        conditions.push("morning");
-    }
-
-    if (has("snow", "snowstorm")) {
-        conditions.push("snowy weather");
-    }
-
-    if (has("dark")) {
-        conditions.push("dark atmosphere");
-    }
-
-    if (conditions.length === 0) {
-        conditions.push("natural story-appropriate weather and time of day");
-    }
-
-
-    /* =====================================================
-       EVENT EXTRACTION
-    ===================================================== */
-
-    const events = [];
-
-
-    /* Discovery events */
-
-    if (has("finds", "found", "find", "discovers", "discovered")) {
-
-        events.push({
-            type: "discovery",
-            text: "The main character discovers the important subject described in the story."
-        });
-
-    }
-
-
-    /* Lost animal */
-
-    if (
-        has("lost kitten", "abandoned kitten", "kitten") &&
-        has("lost", "abandoned")
-    ) {
-
-        events.push({
-            type: "discovery",
-            text: "The boy discovers an abandoned or lost kitten."
-        });
-
-    }
-
-
-    /* Rain */
-
-    if (has("rainstorm", "rain", "raining")) {
-
-        events.push({
-            type: "obstacle",
-            text: "A sudden rainstorm creates a difficult situation."
-        });
-
-    }
-
-
-    /* Protection */
-
-    if (
-        has("protect", "protects", "save", "saves", "rescue", "rescues")
-    ) {
-
-        events.push({
-            type: "attempt",
-            text: "The main character decides to protect or rescue the important subject."
-        });
-
-    }
-
-
-    /* Carrying */
-
-    if (
-        has("carries", "carry", "takes home", "brings home", "brings")
-    ) {
-
-        events.push({
-            type: "progress",
-            text: "The main character takes the important subject toward safety."
-        });
-
-    }
-
-
-    /* Drying */
-
-    if (
-        has("dries", "dry", "dried", "towel")
-    ) {
-
-        events.push({
-            type: "care",
-            text: "The main character dries and cares for the animal."
-        });
-
-    }
-
-
-    /* Feeding */
-
-    if (
-        has("food", "feeds", "feeding", "gives it food", "gives food")
-    ) {
-
-        events.push({
-            type: "care",
-            text: "The main character gives food to the animal."
-        });
-
-    }
-
-
-    /* Poster */
-
-    if (
-        has("poster", "missing-pet poster", "missing pet poster")
-    ) {
-
-        events.push({
-            type: "clue",
-            text: "The main character discovers or uses a missing-pet poster as a clue."
-        });
-
-    }
-
-
-    /* Owner */
-
-    if (
-        has("owner", "reunite", "reunites", "reunited")
-    ) {
-
-        events.push({
-            type: "resolution",
-            text: "The animal is reunited with its owner."
-        });
-
-    }
-
-
-    /* Search */
-
-    if (
-        has("search", "searches", "looking for", "looks for", "tries to find")
-    ) {
-
-        events.push({
-            type: "search",
-            text: "The main character searches for the information or person needed to solve the situation."
-        });
-
-    }
-
-
-    /* Escape / chase */
-
-    if (
-        has("escape", "escapes", "runs away", "chases", "chase")
-    ) {
-
-        events.push({
-            type: "action",
-            text: "A fast-moving action sequence changes the situation."
-        });
-
-    }
-
-
-    /* Construction */
-
-    if (
-        has("build", "builds", "building", "construct", "construction")
-    ) {
-
-        events.push({
-            type: "work",
-            text: "The main character works to complete the building task."
-        });
-
-    }
-
-
-    /* =====================================================
-       SENTENCE-BASED EVENT FALLBACK
-    ===================================================== */
-
-    if (events.length === 0) {
-
-        sentences.forEach((sentence, index) => {
-
-            events.push({
-                type: index === 0 ? "opening" : "event",
-                text: sentence
-            });
-
-        });
-
-    }
-
-
-    /* =====================================================
-       REMOVE DUPLICATES
-    ===================================================== */
-
-    const eventMap = new Map();
-
-    for (const event of events) {
-
-        if (!eventMap.has(event.text)) {
-            eventMap.set(event.text, event);
-        }
-
-    }
-
-    const uniqueEvents = [...eventMap.values()];
-
-
-    /* =====================================================
-       STORY GOAL
-===================================================== */
-
-    let goal =
-        "Resolve the central situation described in the user's story.";
-
-    if (
-        has("reunite", "reunites", "reunited") &&
-        has("owner")
-    ) {
-
-        goal =
-            "Protect the lost animal and reunite it with its owner.";
-
-    } else if (
-        has("save", "saves", "rescue", "rescues")
-    ) {
-
-        goal =
-            "Protect and save the person or animal in danger.";
-
-    } else if (
-        has("find", "finds", "discover", "discovers")
-    ) {
-
-        goal =
-            "Find or discover the important subject described in the story.";
-
-    } else if (
-        has("build", "builds", "building")
-    ) {
-
-        goal =
-            "Complete the building task described in the story.";
-
-    }
-
-
-    /* =====================================================
-       STORY CONFLICT
-===================================================== */
-
-    let conflict =
-        "The main character faces the central obstacle described by the story.";
-
-    if (has("rain", "rainstorm", "storm")) {
-
-        conflict =
-            "The sudden rainstorm makes the situation difficult.";
-
-    } else if (has("lost", "abandoned")) {
-
-        conflict =
-            "The important person or animal is lost and must be safely found.";
-
-    } else if (has("villain", "enemy")) {
-
-        conflict =
-            "An opposing character blocks the main character's goal.";
-
-    } else if (has("danger", "dangerous")) {
-
-        conflict =
-            "The main character must deal with a dangerous situation.";
-
-    }
-
-
-    /* =====================================================
-       CLIMAX + RESOLUTION
-===================================================== */
-
-    let climax =
-        "The main character takes the decisive action that resolves the central problem.";
-
-    let resolution =
-        "The story reaches a logical conclusion based on the user's events.";
-
-    if (
-        has("kitten") &&
-        has("owner") &&
-        has("poster")
-    ) {
-
-        climax =
-            "The boy uses the missing-pet poster information to locate the kitten's owner.";
-
-        resolution =
-            "The boy safely reunites the kitten with its owner.";
-
-    } else if (
-        has("save", "rescue")
-    ) {
-
-        climax =
-            "The main character successfully completes the rescue.";
-
-        resolution =
-            "The rescued person or animal reaches safety.";
-
-    }
-
-
-    /* =====================================================
-       MASTER CHARACTER LOCK
-===================================================== */
-
-    let characterDescription;
-
-    if (mainCharacter === "12-year-old boy") {
-
-        characterDescription =
-            "12-year-old boy, warm natural skin tone, round youthful face, " +
-            "dark brown eyes, short slightly messy black hair, slim child body, " +
-            "sky-blue T-shirt, dark blue jeans and white sneakers";
-
-    } else if (mainCharacter === "12-year-old girl") {
-
-        characterDescription =
-            "12-year-old girl, natural skin tone, youthful round face, " +
-            "dark brown eyes, shoulder-length dark brown hair, slim child body, " +
-            "yellow hoodie, blue jeans and white sneakers";
-
-    } else if (mainCharacter === "young boy") {
-
-        characterDescription =
-            "young boy with youthful face, dark eyes, short dark hair, " +
-            "slim child body, casual shirt, jeans and sneakers";
-
-    } else if (mainCharacter === "young girl") {
-
-        characterDescription =
-            "young girl with youthful face, dark eyes, dark hair, " +
-            "slim child body, casual clothing and sneakers";
-
-    } else if (mainCharacter === "adult woman") {
-
-        characterDescription =
-            "adult woman with natural realistic facial features, dark eyes, " +
-            "dark hair, consistent body proportions and modern casual clothing";
-
-    } else if (mainCharacter === "adult man") {
-
-        characterDescription =
-            "adult man with natural realistic facial features, dark eyes, " +
-            "short dark hair, consistent body proportions and modern casual clothing";
-
-    } else {
-
-        characterDescription =
-            "realistic young adult main character with natural facial features, " +
-            "consistent hairstyle, clothing and body proportions";
-    }
-
-
-    const masterCharacterLock =
-        `MASTER CHARACTER LOCK: ${characterDescription}. ` +
-        `This identity is permanent throughout the entire video. ` +
-        `Never change the face, age, hairstyle, hair color, eye color, skin tone, ` +
-        `body proportions, clothing, footwear or accessories.`;
-
-
-    /* =====================================================
-       STORY ELEMENT LOCK
-===================================================== */
-
-    const storyElementParts = [];
-
-    uniqueCharacters.forEach(character => {
-
-        storyElementParts.push(
-            `Keep "${character}" visually consistent whenever present.`
-        );
-
-    });
-
-    uniqueLocations.forEach(location => {
-
-        storyElementParts.push(
-            `Maintain the same ${location}, geography and recognizable details.`
-        );
-
-    });
-
-    uniqueObjects.forEach(object => {
-
-        storyElementParts.push(
-            `Maintain the same ${object}, appearance, size, color and physical details.`
-        );
-
-    });
-
-    conditions.forEach(condition => {
-
-        storyElementParts.push(
-            `Maintain continuity of ${condition}.`
-        );
-
-    });
-
-
-    const storyElementLock =
-        `STORY ELEMENT LOCK: ${storyElementParts.join(" ")}`;
-
-
-    /* =====================================================
-       EVENT SEQUENCE
-===================================================== */
-
-    let orderedEvents = [...uniqueEvents];
-
-    /*
-      Make sure important story progression is represented.
-    */
-
-    if (
-        has("kitten") &&
-        has("owner") &&
-        has("poster")
-    ) {
-
-        orderedEvents = [
-
-            {
-                type: "opening",
-                text:
-                    "The boy is walking home from school when a sudden rainstorm begins."
-            },
-
-            {
-                type: "discovery",
-                text:
-                    "The boy finds an abandoned kitten under a broken shelter."
-            },
-
-            {
-                type: "decision",
-                text:
-                    "The boy decides to protect the kitten from the rain."
-            },
-
-            {
-                type: "care",
-                text:
-                    "The boy carries the kitten home, dries it and gives it food."
-            },
-
-            {
-                type: "clue",
-                text:
-                    "The boy discovers a missing-pet poster and uses it to identify the kitten's owner."
-            },
-
-            {
-                type: "resolution",
-                text:
-                    "The boy reunites the kitten with its owner."
-            }
-
-        ];
-
-    }
-
-
-    /* =====================================================
-       SCENE EVENT DISTRIBUTION
-===================================================== */
-
-    const scenes = [];
-
-    for (let i = 1; i <= totalScenes; i++) {
-
-        let eventIndex;
-
-        if (orderedEvents.length === 1) {
-
-            eventIndex = 0;
-
-        } else {
-
-            eventIndex = Math.floor(
-                ((i - 1) * orderedEvents.length) / totalScenes
-            );
-
-            eventIndex =
-                Math.min(
-                    eventIndex,
-                    orderedEvents.length - 1
-                );
-        }
-
-        const currentEvent = orderedEvents[eventIndex];
-
-
-        /*
-          If several scenes map to the same event,
-          create a continuation instead of repeating exactly.
-        */
-
-        const repeatNumber =
-            scenes.filter(
-                scene => scene.eventIndex === eventIndex
-            ).length;
-
-
-        let scenePurpose =
-            currentEvent.text;
-
-        if (repeatNumber > 0) {
-
-            scenePurpose =
-                `Continue the previous event naturally: ${currentEvent.text}`;
-
-        }
-
-
-        /* =================================================
-           STORY-SPECIFIC DIALOGUE
-        ================================================= */
-
-        let dialogue =
-            "I need to keep going.";
-
-        let voiceover =
-            currentEvent.text;
-
-
-        if (
-            has("kitten") &&
-            has("owner") &&
-            has("poster")
-        ) {
-
-            const kittenDialogue = [
-
-                "I need to get home before this gets worse.",
-
-                "You're not staying out here alone.",
-
-                "Come on, little one. You're safe with me.",
-
-                "Let's get you warm and fed.",
-
-                "Wait... this poster might be about you.",
-
-                "We found your owner."
-
-            ];
-
-            const kittenVoiceover = [
-
-                "On his way home from school, a sudden storm changed everything.",
-
-                "Under a broken shelter, he discovered a tiny abandoned kitten.",
-
-                "He decided the kitten needed protection from the rain.",
-
-                "At home, he dried the kitten and gave it something to eat.",
-
-                "Then a missing-pet poster revealed a possible way home.",
-
-                "The search ended with a happy reunion."
-
-            ];
-
-            dialogue =
-                kittenDialogue[
-                    Math.min(i - 1, kittenDialogue.length - 1)
-                ];
-
-            voiceover =
-                kittenVoiceover[
-                    Math.min(i - 1, kittenVoiceover.length - 1)
-                ];
-
-        } else {
-
-            if (currentEvent.type === "opening") {
-
-                dialogue =
-                    "Something feels different today.";
-
-                voiceover =
-                    "This is where the story begins.";
-
-            } else if (currentEvent.type === "discovery") {
-
-                dialogue =
-                    "What is that?";
-
-                voiceover =
-                    "Then the main character discovered something important.";
-
-            } else if (currentEvent.type === "obstacle") {
-
-                dialogue =
-                    "I have to keep moving.";
-
-                voiceover =
-                    "A sudden obstacle made the situation more difficult.";
-
-            } else if (
-                currentEvent.type === "attempt" ||
-                currentEvent.type === "decision"
-            ) {
-
-                dialogue =
-                    "I'm going to help.";
-
-                voiceover =
-                    "The character decided to take action.";
-
-            } else if (currentEvent.type === "clue") {
-
-                dialogue =
-                    "This could be the clue.";
-
-                voiceover =
-                    "A new clue finally moved the story forward.";
-
-            } else if (currentEvent.type === "resolution") {
-
-                dialogue =
-                    "We finally made it.";
-
-                voiceover =
-                    "The central problem was finally resolved.";
-
-            }
-
-        }
-
-
-        /* =================================================
-           VISUAL PROMPT
-        ================================================= */
-
-        const visualPrompt =
-            `${masterCharacterLock} ` +
-            `${storyElementLock} ` +
-            `ORIGINAL USER STORY: "${story}". ` +
-            `SCENE ${i} OF ${totalScenes}. ` +
-            `STORY EVENT: ${scenePurpose}. ` +
-            `This scene must visually show the actual event from the user's story. ` +
-            `Do not substitute a generic event. ` +
-            `Use only story-relevant characters, animals, objects and locations. ` +
-            `Natural cinematic movement, realistic facial expressions, believable physics, ` +
-            `detailed production design and cinematic movie quality. ` +
-            `Aspect ratio: ${ratio}.`;
-
-
-        /* =================================================
-           CAMERA
-        ================================================= */
-
-        let camera;
-
-        if (currentEvent.type === "action") {
-
-            camera =
-                "Dynamic cinematic tracking shot following the action while keeping the main character clearly visible.";
-
-        } else if (currentEvent.type === "discovery") {
-
-            camera =
-                "Wide establishing shot followed by a smooth push toward the discovered story element.";
-
-        } else if (currentEvent.type === "resolution") {
-
-            camera =
-                "Warm cinematic medium shot followed by a slow emotional push toward the reunion or resolution.";
-
-        } else {
-
-            camera =
-                i % 3 === 0
-                    ? "Medium cinematic shot with a slow emotional push-in."
-                    : "Natural cinematic tracking or over-the-shoulder shot following the story action.";
-        }
-
-
-        /* =================================================
-           CONTINUITY
-        ================================================= */
-
-        const continuity =
-            i === 1
-                ? "Establish the permanent character identity, story elements, location, weather, time of day and starting situation."
-                : `Continue directly from Scene ${i - 1}. ` +
-                  `Maintain the MASTER CHARACTER LOCK exactly. ` +
-                  `Keep every character, animal, object, location, weather condition, lighting condition ` +
-                  `and physical position consistent. ` +
-                  `Begin from the previous scene's ending state.`;
-
-
-        /* =================================================
-           SCENE
-        ================================================= */
-
-        scenes.push({
-
-            scene: i,
-
-            eventIndex,
-
-            sceneType: currentEvent.type,
-
-            start: (i - 1) * 10,
-
-            end: i * 10,
-
-            duration: 10,
-
-            storyEvent: currentEvent.text,
-
-            visual_prompt: visualPrompt,
-
-            camera,
-
-            lighting:
-                "Maintain consistent cinematic lighting, weather, shadows, color mood and time of day.",
-
-            action:
-                `${scenePurpose} ` +
-                `Complete the action naturally within exactly 10 seconds.`,
-
-            dialogue,
-
-            voiceover,
-
-            continuity
-
-        });
-
-    }
-
-
-    /* =====================================================
-       RESPONSE
-===================================================== */
+  try {
+    const {
+      prompt,
+      duration = "30 sec",
+      aspectRatio = "16:9"
+    } = req.body || {};
+
+    if (!prompt || !String(prompt).trim()) {
+      return res.status(400).json({
+        error: "Please enter a story prompt."
+      });
+    }
+
+    const project = buildScenes(
+      String(prompt).trim(),
+      duration,
+      aspectRatio || "16:9"
+    );
 
     res.json({
-
-        status: "success",
-
-        message:
-            "SANAPTAI V8 Story Parser project created successfully",
-
-        project: {
-
-            prompt: story,
-
-            duration: totalSeconds,
-
-            sceneDuration: 10,
-
-            totalScenes,
-
-            aspectRatio: ratio,
-
-            storyUnderstanding: {
-
-                originalStory: story,
-
-                characters: uniqueCharacters,
-
-                locations: uniqueLocations,
-
-                objects: uniqueObjects,
-
-                conditions,
-
-                goal,
-
-                conflict,
-
-                events: orderedEvents,
-
-                climax,
-
-                resolution
-
-            },
-
-            characterLocks: [
-
-                {
-                    name: "MASTER CHARACTER",
-
-                    description: characterDescription
-
-                }
-
-            ],
-
-            storyElements: [
-
-                {
-                    description: storyElementLock
-
-                }
-
-            ],
-
-            scenes
-
-        }
-
+      success: true,
+      mode: "demo",
+      message: "SANAPTAI V9 project created successfully.",
+      ...project
     });
+  } catch (error) {
+    console.error("Demo Project Error:", error);
 
+    res.status(500).json({
+      error: "Project creation failed.",
+      details: error.message
+    });
+  }
 });
 
-
-/* =========================================================
-   AI SCENE PLANNER
-   Future AI mode
-========================================================= */
+// ------------------------------------------------------------
+// AI STORY PLANNER
+// FUTURE MODE — USES GEMINI ONLY WHEN CALLED
+// ------------------------------------------------------------
 
 app.post("/api/plan-scenes", async (req, res) => {
-
-    const { prompt, duration, aspectRatio } = req.body;
-
-    if (!prompt) {
-
-        return res.status(400).json({
-            error: "Video prompt is required"
-        });
-
+  try {
+    if (!ai) {
+      return res.status(500).json({
+        error: "GEMINI_API_KEY is not configured on the server."
+      });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
+    const {
+      prompt,
+      duration = "30 sec",
+      aspectRatio = "16:9"
+    } = req.body || {};
 
-        return res.status(500).json({
-            error: "GEMINI_API_KEY is not configured"
-        });
-
+    if (!prompt || !String(prompt).trim()) {
+      return res.status(400).json({
+        error: "Please enter a story prompt."
+      });
     }
 
-    try {
+    const seconds = durationToSeconds(duration);
+    const sceneCount = createSceneCount(seconds);
 
-        const totalSeconds = Number(duration) || 10;
+    const systemInstruction = `
+You are SANAPTAI V9 Story Planning Engine.
 
-        const totalScenes =
-            Math.ceil(totalSeconds / 10);
+Convert the user's story into exactly ${sceneCount} scenes.
 
-        const ai =
-            new GoogleGenAI({
-                apiKey: process.env.GEMINI_API_KEY
-            });
+ABSOLUTE RULES:
+1. Every scene is exactly 10 seconds.
+2. Preserve the actual events from the user's story.
+3. Do not invent unrelated events.
+4. Create a MASTER CHARACTER LOCK.
+5. Create an ANIMAL LOCK when animals exist.
+6. Create a LOCATION LOCK.
+7. Create an OBJECT LOCK.
+8. Maintain continuity from one scene to the next.
+9. Dialogue must be short enough to speak naturally within 10 seconds.
+10. Voiceover must also fit within 10 seconds.
+11. Output valid JSON only.
 
-
-        const systemPrompt = `
-
-You are SANAPTAI V8, an advanced AI story parser and cinematic scene planner.
-
-First understand the user's complete story.
-
-Extract:
-
-1. Characters
-2. Locations
-3. Objects
-4. Weather and time
-5. Goal
-6. Conflict
-7. Events in chronological order
-8. Climax
-9. Resolution
-
-Then create exactly ${totalScenes} scenes.
-
-Every scene must be exactly 10 seconds.
-
-Do not create generic filler scenes.
-
-Every scene must represent an actual event or necessary transition from the user's story.
-
-Maintain:
-
-- exact character identity
-- same face
-- same age
-- same hairstyle
-- same clothing
-- same animals
-- same objects
-- same locations
-- same weather
-- same time of day
-- logical physical continuity
-
-Dialogue must fit naturally within 10 seconds.
-
-Voiceover must fit naturally within 10 seconds.
-
-Return ONLY valid JSON.
-
-Required structure:
-
+Required JSON structure:
 {
-  "duration": ${totalSeconds},
-  "sceneDuration": 10,
-  "totalScenes": ${totalScenes},
-  "aspectRatio": "${aspectRatio || "16:9"}",
-  "storyUnderstanding": {
-    "originalStory": "",
+  "story_understanding": {
     "characters": [],
+    "animals": [],
     "locations": [],
     "objects": [],
-    "conditions": [],
     "goal": "",
     "conflict": "",
-    "events": [],
     "climax": "",
     "resolution": ""
   },
-  "characterLocks": [],
-  "storyElements": [],
-  "scenes": []
+  "scenes": [
+    {
+      "scene_number": 1,
+      "start_time": "0s",
+      "end_time": "10s",
+      "duration": 10,
+      "story_event": "",
+      "visual_prompt": "",
+      "camera": "",
+      "lighting": "",
+      "action": "",
+      "dialogue": "",
+      "voiceover": "",
+      "continuity": ""
+    }
+  ]
 }
-
-USER STORY:
-
-${prompt}
-
 `;
 
-
-        const result =
-            await ai.models.generateContent({
-
-                model: "gemini-3.8-flash",
-
-                contents: systemPrompt
-
-            });
-
-
-        let text =
-            result.text || "";
-
-
-        text =
-            text.replace(/^```json\s*/i, "");
-
-        text =
-            text.replace(/^```\s*/i, "");
-
-        text =
-            text.replace(/\s*```$/i, "");
-
-
-        let project;
-
-
-        try {
-
-            project =
-                JSON.parse(text);
-
-        } catch (parseError) {
-
-            return res.status(500).json({
-
-                error:
-                    "Gemini returned invalid JSON",
-
-                raw:
-                    text
-
-            });
-
+    const result = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                `${systemInstruction}\n\n` +
+                `Aspect ratio: ${aspectRatio}\n` +
+                `Duration: ${seconds} seconds\n\n` +
+                `USER STORY:\n${String(prompt).trim()}`
+            }
+          ]
         }
-
-
-        res.json({
-
-            status: "success",
-
-            message:
-                "AI V8 story plan created successfully",
-
-            project
-
-        });
-
-
-    } catch (error) {
-
-        console.error(
-            "Gemini Error:",
-            error
-        );
-
-
-        if (
-            error?.status === 429 ||
-            error?.code === 429
-        ) {
-
-            return res.status(429).json({
-
-                error:
-                    "Gemini quota exceeded",
-
-                message:
-                    "Gemini free-tier limit reached. Demo Mode does not use Gemini."
-
-            });
-
-        }
-
-
-        res.status(500).json({
-
-            error:
-                "AI scene planning failed",
-
-            message:
-                error?.message ||
-                "Unknown Gemini error"
-
-        });
-
-    }
-
-});
-
-
-/* =========================================================
-   CREATE PROJECT
-========================================================= */
-
-app.post("/api/create-project", (req, res) => {
-
-    const {
-        prompt,
-        duration,
-        aspectRatio
-    } = req.body;
-
-
-    if (!prompt) {
-
-        return res.status(400).json({
-
-            error:
-                "Video prompt is required"
-
-        });
-
-    }
-
-
-    const totalSeconds =
-        Number(duration) || 10;
-
-    const totalScenes =
-        Math.ceil(totalSeconds / 10);
-
-
-    res.json({
-
-        status:
-            "success",
-
-        message:
-            "Project created successfully",
-
-        project: {
-
-            prompt,
-
-            duration:
-                totalSeconds,
-
-            sceneDuration:
-                10,
-
-            totalScenes,
-
-            aspectRatio:
-                aspectRatio || "16:9"
-
-        }
-
+      ]
     });
 
+    const raw = result.text || "";
+
+    let parsed;
+
+    try {
+      const cleaned = raw
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.status(500).json({
+        error: "AI returned invalid JSON.",
+        raw
+      });
+    }
+
+    res.json({
+      success: true,
+      mode: "ai",
+      duration_seconds: seconds,
+      duration: `${seconds} seconds`,
+      total_scenes: sceneCount,
+      aspect_ratio: aspectRatio,
+      ...parsed
+    });
+  } catch (error) {
+    console.error("Gemini Error:", error);
+
+    res.status(500).json({
+      error: "AI story planning failed.",
+      details: error.message
+    });
+  }
 });
 
+// ------------------------------------------------------------
+// CREATE PROJECT
+// ------------------------------------------------------------
 
-/* =========================================================
-   START SERVER
-========================================================= */
+app.post("/api/create-project", (req, res) => {
+  try {
+    const {
+      prompt,
+      duration = "30 sec",
+      aspectRatio = "16:9"
+    } = req.body || {};
 
-app.listen(PORT, () => {
+    if (!prompt || !String(prompt).trim()) {
+      return res.status(400).json({
+        error: "Please enter a story prompt."
+      });
+    }
 
-    console.log(
-        `SANAPTAI V8 server running on port ${PORT}`
+    const project = buildScenes(
+      String(prompt).trim(),
+      duration,
+      aspectRatio || "16:9"
     );
 
+    res.json({
+      success: true,
+      ...project
+    });
+  } catch (error) {
+    console.error("Create Project Error:", error);
+
+    res.status(500).json({
+      error: "Project creation failed.",
+      details: error.message
+    });
+  }
+});
+
+// ------------------------------------------------------------
+// HEALTH CHECK
+// ------------------------------------------------------------
+
+app.get("/", (req, res) => {
+  res.send("SANAPTAI V9 is running.");
+});
+
+// ------------------------------------------------------------
+// SERVER
+// ------------------------------------------------------------
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`SANAPTAI V9 running on port ${PORT}`);
 });
