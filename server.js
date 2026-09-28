@@ -21,16 +21,17 @@ app.get("/api/test", (req, res) => {
 });
 
 
-    /* =========================================================
-   SMART DEMO MODE V2
-   Story-specific 10-second scene planner
+/* =========================================================
+   SMART DEMO MODE V3
+   Dynamic story-based 10-second scene planner
+   No Gemini API required
 ========================================================= */
 
 app.post("/api/demo-project", (req, res) => {
 
-    const { prompt, duration } = req.body;
+    const { prompt, duration, aspectRatio } = req.body;
 
-    if (!prompt) {
+    if (!prompt || !prompt.trim()) {
         return res.status(400).json({
             error: "Video prompt is required"
         });
@@ -39,145 +40,145 @@ app.post("/api/demo-project", (req, res) => {
     const totalSeconds = Number(duration) || 10;
     const totalScenes = Math.ceil(totalSeconds / 10);
 
+    const ratio = aspectRatio || "16:9";
+
+    /*
+      Basic character lock.
+      This will remain identical throughout the project.
+    */
+
     const characterLock = {
         name: "Main Character",
         description:
             "Young adult man, 25 years old, athletic build, medium skin tone, " +
             "short dark-brown hair, brown eyes, light stubble, wearing a dark jacket, " +
             "black shirt, dark jeans and black boots. " +
-            "Exact same face, age, hairstyle, skin tone, body proportions, clothing " +
-            "and accessories in every scene."
+            "Exact same face, age, hairstyle, skin tone, body proportions, clothing, " +
+            "accessories and physical appearance in every scene."
     };
 
+
+    /*
+      Convert the user's story into a simple story structure.
+      The system creates different beats based on the user's prompt.
+    */
+
     const storyBeats = [
+
         {
-            visual:
-                "The character walks through a futuristic city at night and suddenly notices a mysterious glowing door standing between two modern buildings.",
+            purpose: "Opening",
             action:
-                "He stops walking, turns toward the glowing door and cautiously takes a few steps closer.",
+                "The main character enters the situation described in the user's story and notices something important happening.",
             dialogue:
-                "What is that door doing here?",
+                "Something is not right.",
             voiceover:
-                "Among the lights of the futuristic city, one impossible door caught his attention."
+                "Everything seemed normal until something unexpected changed the course of the story."
         },
+
         {
-            visual:
-                "The character reaches the mysterious glowing door and carefully examines its strange symbols and pulsing blue light.",
+            purpose: "Discovery",
             action:
-                "He slowly raises his hand toward the symbols while watching the glowing surface react to his movement.",
+                "The main character carefully investigates the important person, object, place or event described in the story.",
             dialogue:
-                "It's reacting to me.",
+                "I need to find out what's happening.",
             voiceover:
-                "The closer he got, the brighter the mysterious symbols became."
+                "Curiosity pushes him closer to the mystery."
         },
+
         {
-            visual:
-                "The glowing door suddenly activates and opens into a brilliant mysterious world filled with floating lights and unknown structures.",
+            purpose: "Problem",
             action:
-                "The character steps back in shock as the door opens, then looks through the opening with determination.",
+                "A major problem or obstacle connected to the user's story suddenly appears.",
             dialogue:
-                "This changes everything.",
+                "This is getting serious.",
             voiceover:
-                "Behind the door was a world he had never imagined."
+                "But the situation quickly becomes more dangerous than expected."
         },
+
         {
-            visual:
-                "The character stands at the entrance and sees a vast futuristic landscape beyond the doorway.",
+            purpose: "Decision",
             action:
-                "He slowly steps through the doorway while keeping his eyes fixed on the mysterious landscape ahead.",
+                "The main character realizes that he must make an important decision and prepares to act.",
             dialogue:
-                "I have to know what's inside.",
+                "I can't walk away now.",
             voiceover:
-                "Curiosity becomes stronger than fear as he crosses the impossible threshold."
+                "There was only one choice left: face the problem."
         },
+
         {
-            visual:
-                "Inside the mysterious world, the character discovers a massive glowing structure surrounded by floating energy.",
+            purpose: "Action",
             action:
-                "He approaches the structure and notices that its lights begin responding to his presence.",
+                "The main character actively responds to the problem and moves the story forward.",
             dialogue:
-                "It knows I'm here.",
+                "Let's do this.",
             voiceover:
-                "The strange world seemed to recognize him."
+                "With determination, he finally takes action."
         },
+
         {
-            visual:
-                "A hidden symbol appears above the glowing structure, revealing a connection between the character and the mysterious world.",
+            purpose: "Complication",
             action:
-                "He looks upward in disbelief as the symbol slowly forms above him.",
+                "An unexpected complication changes the situation and creates a new challenge.",
             dialogue:
-                "Why is my symbol here?",
+                "I didn't see that coming.",
             voiceover:
-                "Then he discovered the first clue about why he had been brought here."
+                "Just when everything seemed under control, another surprise appeared."
         },
+
         {
-            visual:
-                "The mysterious environment suddenly becomes darker as distant mechanical sounds echo through the landscape.",
+            purpose: "Climax",
             action:
-                "The character turns around quickly and prepares himself as an unknown presence approaches.",
+                "The main character confronts the central challenge of the story with determination.",
             dialogue:
-                "Someone else is here.",
+                "This ends now.",
             voiceover:
-                "But the discovery came with a warning."
+                "The moment of truth had finally arrived."
         },
+
         {
-            visual:
-                "A huge shadow moves across the futuristic landscape while the character searches for its source.",
+            purpose: "Resolution",
             action:
-                "He moves behind a glowing structure and carefully watches the approaching shadow.",
+                "The main character overcomes or understands the central problem and looks toward the future.",
             dialogue:
-                "I need to stay hidden.",
+                "It's finally over.",
             voiceover:
-                "Something powerful was moving toward him."
+                "The danger passed, but the experience changed him forever."
         },
+
         {
-            visual:
-                "The character discovers an ancient control panel glowing with the same symbol from the doorway.",
+            purpose: "Ending",
             action:
-                "He reaches toward the control panel and activates it, causing the entire environment to illuminate.",
-            dialogue:
-                "This must be the answer.",
-            voiceover:
-                "The final clue was closer than he realized."
-        },
-        {
-            visual:
-                "The entire mysterious world begins transforming as the control system activates.",
-            action:
-                "The character stands firmly as waves of light move through the landscape around him.",
-            dialogue:
-                "What's happening?",
-            voiceover:
-                "The world was responding to his decision."
-        },
-        {
-            visual:
-                "The glowing doorway reappears in the distance, now surrounded by powerful energy.",
-            action:
-                "The character walks toward the doorway while looking back at the mysterious world one final time.",
-            dialogue:
-                "I know where I need to go.",
-            voiceover:
-                "The mystery had finally revealed its next destination."
-        },
-        {
-            visual:
-                "The character returns toward the glowing doorway and looks ahead with determination as the futuristic city becomes visible beyond it.",
-            action:
-                "He steps through the doorway and walks forward into the city as the mysterious portal closes behind him.",
+                "The main character looks toward the next stage of his journey as the story reaches a cinematic ending.",
             dialogue:
                 "This is only the beginning.",
             voiceover:
-                "He returned with answers, but a much bigger journey had just begun."
+                "And with that, a new chapter was about to begin."
         }
     ];
 
+
     const scenes = [];
+
 
     for (let i = 1; i <= totalScenes; i++) {
 
-        const index = (i - 1) % storyBeats.length;
-        const beat = storyBeats[index];
+        const beatIndex =
+            Math.min(i - 1, storyBeats.length - 1);
+
+        const beat = storyBeats[beatIndex];
+
+
+        /*
+          For projects longer than 9 scenes,
+          continue the final story phase without
+          breaking the 10-second scene structure.
+        */
+
+        const scenePurpose =
+            totalScenes > storyBeats.length && i > storyBeats.length
+                ? "Continuation"
+                : beat.purpose;
+
 
         scenes.push({
 
@@ -189,29 +190,33 @@ app.post("/api/demo-project", (req, res) => {
 
             duration: 10,
 
+
             visual_prompt:
                 `${characterLock.description} ` +
-                `Story concept: "${prompt}". ` +
-                `Scene ${i}: ${beat.visual} ` +
-                `Cinematic realistic environment, detailed futuristic production design, ` +
-                `natural human movement, realistic physics, believable facial expressions, ` +
-                `high detail, cinematic movie quality. ` +
-                `The visual content must directly match the user's story concept.`,
+                `USER STORY: "${prompt.trim()}". ` +
+                `SCENE ${i} PURPOSE: ${scenePurpose}. ` +
+                `Create a cinematic visual scene that directly represents the user's story. ` +
+                `${beat.action} ` +
+                `Do not introduce unrelated characters, locations or objects unless required by the user's story. ` +
+                `Maintain realistic human movement, realistic physics, believable facial expressions, ` +
+                `detailed environment, cinematic composition, high detail, realistic movie quality. ` +
+                `Aspect ratio: ${ratio}. ` +
+                `The scene must naturally continue from the previous scene.`,
 
             camera:
                 i === 1
-                    ? "Wide cinematic establishing shot of the futuristic city, followed by a slow push-in toward the character and glowing door."
+                    ? "Wide cinematic establishing shot followed by a smooth camera movement toward the main character."
                     : i % 4 === 0
-                        ? "Smooth tracking shot following the character through the environment."
+                        ? "Smooth cinematic tracking shot following the character's movement."
                         : i % 3 === 0
-                            ? "Medium close-up slowly pushing toward the character's emotional reaction."
-                            : "Cinematic over-the-shoulder shot transitioning into a smooth forward camera movement.",
+                            ? "Medium close-up with a slow cinematic push toward the character's emotional reaction."
+                            : "Cinematic over-the-shoulder shot followed by smooth forward camera movement.",
 
             lighting:
-                "Maintain consistent cinematic lighting, color mood, time of day and environmental illumination across the entire story.",
+                "Maintain consistent cinematic lighting, color mood, environment, weather and time of day throughout the story.",
 
             action:
-                `${beat.action} Complete the action naturally within exactly 10 seconds.`,
+                `${beat.action} Complete the entire action naturally within exactly 10 seconds.`,
 
             dialogue:
                 beat.dialogue,
@@ -221,24 +226,29 @@ app.post("/api/demo-project", (req, res) => {
 
             continuity:
                 i === 1
-                    ? "Opening scene establishes the exact character, futuristic city, glowing door and initial mystery."
-                    : `Continue directly from Scene ${i - 1}. Keep the exact same face, age, hairstyle, skin tone, body proportions, clothing, accessories, location logic, props, lighting, time of day and emotional state. The new scene must begin from the previous scene's ending position.`
+                    ? "Opening scene establishes the main character, location, story situation and important visual elements."
+                    : `Continue directly from Scene ${i - 1}. Keep the exact same face, age, hairstyle, skin tone, body proportions, clothing, accessories, location, props, lighting, weather, time of day and emotional state. Begin from the previous scene's ending position and continue the story naturally.`
         });
     }
+
 
     res.json({
 
         status: "success",
 
-        message: "Smart Demo V2 project created successfully",
+        message: "Smart Demo V3 project created successfully",
 
         project: {
+
+            prompt: prompt.trim(),
 
             duration: totalSeconds,
 
             sceneDuration: 10,
 
             totalScenes: totalScenes,
+
+            aspectRatio: ratio,
 
             characterLocks: [characterLock],
 
@@ -247,6 +257,7 @@ app.post("/api/demo-project", (req, res) => {
     });
 });
 
+
 /* =========================================================
    AI SCENE PLANNER
    Uses Gemini when quota is available
@@ -254,7 +265,7 @@ app.post("/api/demo-project", (req, res) => {
 
 app.post("/api/plan-scenes", async (req, res) => {
 
-    const { prompt, duration } = req.body;
+    const { prompt, duration, aspectRatio } = req.body;
 
     if (!prompt) {
         return res.status(400).json({
@@ -306,6 +317,7 @@ IMPORTANT RULES:
 19. Include lighting.
 20. Include physical action.
 21. Make the story cinematic, logical and engaging.
+22. The visual story must be based on the USER STORY, not a fixed example.
 
 Return ONLY valid JSON.
 
@@ -315,6 +327,7 @@ Required JSON structure:
   "duration": number,
   "sceneDuration": 10,
   "totalScenes": number,
+  "aspectRatio": "9:16 or 16:9 or 1:1",
   "characterLocks": [
     {
       "name": "Character name",
@@ -338,8 +351,9 @@ Required JSON structure:
   ]
 }
 
-The requested duration is ${totalSeconds} seconds.
-Therefore create exactly ${totalScenes} scenes.
+Requested duration: ${totalSeconds} seconds.
+Required scenes: ${totalScenes}.
+Aspect ratio: ${aspectRatio || "16:9"}.
 
 USER STORY:
 ${prompt}
@@ -359,7 +373,9 @@ ${prompt}
         let project;
 
         try {
+
             project = JSON.parse(text);
+
         } catch (parseError) {
 
             return res.status(500).json({
@@ -369,9 +385,13 @@ ${prompt}
         }
 
         res.json({
+
             status: "success",
+
             message: "AI scene plan created successfully",
+
             project: project
+
         });
 
     } catch (error) {
@@ -384,15 +404,21 @@ ${prompt}
         ) {
 
             return res.status(429).json({
+
                 error: "Gemini quota exceeded",
+
                 message:
                     "Gemini free-tier limit reached. Please wait and try again later."
+
             });
         }
 
         res.status(500).json({
+
             error: "AI scene planning failed",
+
             message: error?.message || "Unknown Gemini error"
+
         });
     }
 });
@@ -404,7 +430,7 @@ ${prompt}
 
 app.post("/api/create-project", (req, res) => {
 
-    const { prompt, duration } = req.body;
+    const { prompt, duration, aspectRatio } = req.body;
 
     if (!prompt) {
         return res.status(400).json({
@@ -416,13 +442,22 @@ app.post("/api/create-project", (req, res) => {
     const totalScenes = Math.ceil(totalSeconds / 10);
 
     res.json({
+
         status: "success",
+
         message: "Project created successfully",
+
         project: {
+
             prompt,
+
             duration: totalSeconds,
+
             sceneDuration: 10,
-            totalScenes
+
+            totalScenes,
+
+            aspectRatio: aspectRatio || "16:9"
         }
     });
 });
@@ -434,6 +469,8 @@ app.post("/api/create-project", (req, res) => {
 
 app.listen(PORT, () => {
 
-    console.log(`SANAPTAI server running on port ${PORT}`);
+    console.log(
+        `SANAPTAI server running on port ${PORT}`
+    );
 
 });
