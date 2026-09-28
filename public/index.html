@@ -227,8 +227,18 @@ async function generateVideo() {
 data.project.scenes.forEach((scene) => {
   sceneText +=
     "Scene " + scene.scene +
-    " (" + scene.start + "-" + scene.end + " sec)\n" +
-    scene.prompt + "\n\n";
+    " (" + scene.start + "-" + scene.end + " sec)\n\n" +
+
+    "🎥 Visual Prompt:\n" +
+    scene.prompt + "\n\n" +
+
+    "🗣️ Dialogue:\n" +
+    (scene.dialogue || "No dialogue") + "\n\n" +
+
+    "🎙️ Voiceover:\n" +
+    (scene.voiceover || "No voiceover") + "\n\n" +
+
+    "-------------------------\n\n";
 });
 
 status.textContent = sceneText;
