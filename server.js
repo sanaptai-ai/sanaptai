@@ -1,72 +1,38 @@
-import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
+import express from "express";
+import cors from "cors";
+import { GoogleGenAI } from "@google/genai";
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY
-});
-
+app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/* =========================================================
+   BASIC TEST
+========================================================= */
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-
-// Create basic video project
-app.post('/api/create-project', (req, res) => {
-    const { prompt, duration } = req.body;
-
-    if (!prompt) {
-        return res.status(400).json({
-            error: 'Video prompt is required'
-        });
-    }
-
-    const totalSeconds = Number(duration) || 10;
-    const sceneDuration = 10;
-    const sceneCount = Math.ceil(totalSeconds / sceneDuration);
-
-    const scenes = [];
-
-    for (let i = 1; i <= sceneCount; i++) {
-        scenes.push({
-            scene: i,
-            start: (i - 1) * 10,
-            end: i * 10,
-            duration: 10,
-            prompt: prompt,
-            status: 'pending'
-        });
-    }
-
+app.get("/api/test", (req, res) => {
     res.json({
-        status: 'success',
-        project: {
-            duration: totalSeconds,
-            sceneDuration: sceneDuration,
-            totalScenes: sceneCount,
-            scenes: scenes
-        }
+        status: "success",
+        message: "SANAPTAI server is working"
     });
 });
 
-// Demo Mode - works without Gemini
-app.post('/api/demo-project', (req, res) => {
+
+/* =========================================================
+   SMART DEMO MODE
+   Works without Gemini
+========================================================= */
+
+app.post("/api/demo-project", (req, res) => {
 
     const { prompt, duration } = req.body;
 
     if (!prompt) {
         return res.status(400).json({
-            error: 'Video prompt is required'
+            error: "Video prompt is required"
         });
     }
 
@@ -77,31 +43,75 @@ app.post('/api/demo-project', (req, res) => {
         name: "Main Character",
         description:
             "Young adult man, 25 years old, athletic build, medium skin tone, " +
-            "short dark hair, brown eyes, light stubble, wearing a dark jacket, " +
-            "black shirt, dark jeans and black boots. Keep the exact same face, " +
-            "hair, clothing, body proportions and accessories in every scene."
+            "short dark-brown hair, brown eyes, light stubble, wearing a dark jacket, " +
+            "black shirt, dark jeans and black boots. Exact same face, age, hairstyle, " +
+            "clothing, body proportions and accessories in every scene."
     };
 
-    const sceneIdeas = [
-        "The main character enters the environment and notices something unusual.",
-        "The main character moves closer and carefully investigates what he discovered.",
-        "The main character reacts to the discovery and makes an important decision.",
-        "The main character takes action and moves toward the next part of the story.",
-        "The main character faces a new obstacle and tries to overcome it.",
-        "The main character discovers an important clue that changes the situation.",
-        "The main character prepares himself and continues deeper into the situation.",
-        "The main character reaches a critical moment and takes a decisive action.",
-        "The main character deals with the consequence of his decision.",
-        "The main character reaches an emotional turning point.",
-        "The main character discovers the final important detail.",
-        "The main character completes the immediate objective and looks toward the future."
+    const storyBeats = [
+        "The character enters the environment and notices the first unusual clue.",
+        "The character carefully approaches the discovery and studies it.",
+        "The character realizes that the discovery is connected to something much bigger.",
+        "The character tests the mysterious object or situation and observes an unexpected reaction.",
+        "The character faces a new obstacle that prevents an easy solution.",
+        "The character finds an important clue and understands what must be done next.",
+        "The character takes a risky but deliberate step toward solving the mystery.",
+        "The character reaches a major turning point and discovers a hidden truth.",
+        "The character confronts the immediate danger and acts quickly.",
+        "The character overcomes the obstacle and sees the consequences of the decision.",
+        "The character reaches the final discovery and understands its meaning.",
+        "The character completes the immediate objective and looks toward what comes next."
+    ];
+
+    const dialogues = [
+        "What is that?",
+        "I've never seen anything like this.",
+        "This can't be here by accident.",
+        "Something is responding to me.",
+        "Wait... what just happened?",
+        "Now I understand.",
+        "There's only one way to find out.",
+        "This changes everything.",
+        "I have to keep going.",
+        "It's finally working.",
+        "So this was the secret.",
+        "Whatever comes next, I'm ready."
+    ];
+
+    const voiceovers = [
+        "In a city filled with advanced technology, one discovery made no sense.",
+        "The closer he got, the stranger the mystery became.",
+        "What looked impossible was beginning to reveal a hidden purpose.",
+        "Then the discovery suddenly reacted to his presence.",
+        "For the first time, he realized he might be in danger.",
+        "A single clue gave him a reason to continue.",
+        "He knew the next step could change everything.",
+        "The truth was far bigger than he had imagined.",
+        "There was no turning back now.",
+        "The mystery was finally beginning to make sense.",
+        "At last, the hidden purpose became clear.",
+        "And this was only the beginning."
     ];
 
     const scenes = [];
 
     for (let i = 1; i <= totalScenes; i++) {
 
-        const idea = sceneIdeas[(i - 1) % sceneIdeas.length];
+        const index = (i - 1) % storyBeats.length;
+
+        const beat = storyBeats[index];
+
+        let dialogue = "";
+        let voiceover = "";
+
+        if (i === 1) {
+            dialogue = dialogues[0];
+            voiceover = voiceovers[0];
+        } else if (i % 3 === 0) {
+            dialogue = dialogues[index];
+        } else if (i % 2 === 0) {
+            voiceover = voiceovers[index];
+        }
 
         scenes.push({
 
@@ -115,44 +125,42 @@ app.post('/api/demo-project', (req, res) => {
 
             visual_prompt:
                 `${characterLock.description} ` +
-                `The story is based on: "${prompt}". ` +
-                `${idea} ` +
-                `Create a cinematic, detailed, realistic environment with strong visual continuity. ` +
-                `Do not change the character's identity, clothing or appearance.`,
+                `Story concept: "${prompt}". ` +
+                `Scene ${i}: ${beat} ` +
+                `Show a detailed cinematic environment directly connected to the previous scene. ` +
+                `Use realistic human movement, natural body proportions and believable physical interaction. ` +
+                `Keep the same character identity, clothing, props, location and visual style. ` +
+                `The scene must feel like one continuous movie rather than a separate clip.`,
 
             camera:
                 i === 1
-                    ? "Wide establishing shot followed by a slow cinematic push-in."
-                    : "Medium tracking shot following the character's movement.",
+                    ? "Wide establishing shot, then a slow cinematic push-in toward the character."
+                    : i % 3 === 0
+                        ? "Medium close-up with a slow push-in to capture the character's reaction."
+                        : "Smooth cinematic tracking shot following the character's movement.",
 
             lighting:
-                "Cinematic lighting that remains consistent with the environment, time and mood.",
+                "Consistent cinematic lighting matching the same location, time of day and emotional mood as the previous scene.",
 
             action:
-                `${idea} The action must be physically realistic and completed within 10 seconds.`,
+                `${beat} The action must begin from the previous scene's ending state and be completed naturally within 10 seconds.`,
 
-            dialogue:
-                i === 1
-                    ? "What is that?"
-                    : "",
+            dialogue: dialogue,
 
-            voiceover:
-                i === 1
-                    ? "Something unexpected was about to change everything."
-                    : "",
+            voiceover: voiceover,
 
             continuity:
                 i === 1
-                    ? "Opening scene establishes the character, environment and story situation."
-                    : `Continue directly from Scene ${i - 1}. Keep the same character, location, clothing, props, lighting and emotional state.`
+                    ? "Opening scene establishes the main character, environment and initial mystery."
+                    : `Continue directly from Scene ${i - 1}. Preserve the exact same character appearance, clothing, location, props, lighting, time of day and emotional state.`
         });
     }
 
     res.json({
 
-        status: 'success',
+        status: "success",
 
-        message: 'Demo project created successfully',
+        message: "Smart demo project created successfully",
 
         project: {
 
@@ -168,126 +176,80 @@ app.post('/api/demo-project', (req, res) => {
         }
     });
 });
-// AI Scene Planner
-app.post('/api/plan-scenes', async (req, res) => {
+
+
+/* =========================================================
+   AI SCENE PLANNER
+   Uses Gemini when quota is available
+========================================================= */
+
+app.post("/api/plan-scenes", async (req, res) => {
 
     const { prompt, duration } = req.body;
 
     if (!prompt) {
         return res.status(400).json({
-            error: 'Video prompt is required'
+            error: "Video prompt is required"
         });
     }
 
-    const totalSeconds = Number(duration) || 10;
-    const sceneDuration = 10;
-    const totalScenes = Math.ceil(totalSeconds / sceneDuration);
-if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({
-        error: 'Gemini API key is not configured'
-    });
-}
+    if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({
+            error: "GEMINI_API_KEY is not configured"
+        });
+    }
+
     try {
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+        const totalSeconds = Number(duration) || 10;
+        const totalScenes = Math.ceil(totalSeconds / 10);
 
-            contents: `Create a detailed ${totalScenes}-scene video story from this idea:
+        const ai = new GoogleGenAI({
+            apiKey: process.env.GEMINI_API_KEY
+        });
 
-"${prompt}"
+        const systemPrompt = `
+You are SANAPTAI, an advanced AI video story and scene planner.
 
-IMPORTANT CHARACTER CONSISTENCY RULES:
+Create a complete cinematic video plan from the user's story idea.
 
-1. Identify all important characters in the story.
+IMPORTANT RULES:
 
-2. Create a permanent CHARACTER LOCK for every important character.
-
-3. The same character must look exactly the same in every scene.
-
-4. Keep the same:
-- face
-- age
-- skin tone
-- hairstyle
-- hair color
-- eye color
-- body type
-- clothing
-- accessories
-- distinguishing features
-
-5. Never randomly change a character's appearance.
-
-6. Every scene prompt must include the relevant character's locked appearance.
-
-7. Maintain continuity of:
-- location
-- time
-- weather
-- lighting
-- props
-- character position
-- story events
-
-SCENE INTELLIGENCE RULES:
-
-- Every scene is exactly 10 seconds.
-- Every scene must logically continue from the previous scene.
-- Never restart the story in a new scene.
-- Maintain the same character identity and Character Lock throughout.
-- Maintain continuity of location, time, weather, lighting, props, clothing, and character position.
-
-For every scene, create:
-
-1. VISUAL PROMPT
-- Detailed cinematic visual description.
-- Include character appearance from the Character Lock.
-- Describe the environment and important objects.
-- Describe the character's current action and emotion.
-
-2. CAMERA
-- Specify the camera shot, such as wide shot, medium shot, close-up, or over-the-shoulder.
-- Specify camera movement, such as tracking, dolly, pan, tilt, push-in, or static.
-- Camera movement must fit the action.
-
-3. LIGHTING
-- Describe the lighting appropriate to the environment and mood.
-- Maintain lighting continuity between connected scenes.
-
-4. ACTION
-- Clearly describe what the character does during the 10-second scene.
-- The action must be physically realistic and complete within 10 seconds.
-
-5. DIALOGUE
-- Use dialogue only when a character is actually speaking.
-- Maximum approximately 18 spoken words per scene.
-- Dialogue must fit naturally within 10 seconds.
-- Never repeat dialogue.
-- If nobody speaks, use an empty string.
-
-6. VOICEOVER
-- Use voiceover only when narration is useful.
-- Keep voiceover short enough to fit naturally within 10 seconds.
-- Do not repeat information already clearly communicated by dialogue.
-- If no voiceover is needed, use an empty string.
-
-7. CONTINUITY
-- Check the previous scene before creating the next scene.
-- The next scene must begin from the physical and emotional state established by the previous scene.
-
-Do not put dialogue, voiceover, camera instructions, or technical notes inside the visual prompt.
-
-Return all information in the JSON fields specified below.
+1. Every scene must be EXACTLY 10 seconds.
+2. Total scenes must equal duration divided by 10.
+3. Maintain perfect character consistency.
+4. Create permanent character locks.
+5. Same face, age, skin tone, hairstyle, eye color, body proportions,
+   clothing and accessories in every scene.
+6. Maintain location continuity.
+7. Maintain time-of-day continuity.
+8. Maintain weather continuity.
+9. Maintain lighting continuity.
+10. Maintain props and object continuity.
+11. Maintain character position and emotional continuity.
+12. Each scene must continue directly from the previous scene.
+13. Do not repeat the same story beat.
+14. Do not repeat dialogue unnecessarily.
+15. Dialogue must be short enough to speak naturally within 10 seconds.
+16. Voiceover must also fit naturally inside 10 seconds.
+17. Visual prompts must be detailed and suitable for AI video generation.
+18. Include camera movement.
+19. Include lighting.
+20. Include physical action.
+21. Make the story cinematic, logical and engaging.
 
 Return ONLY valid JSON.
 
-JSON FORMAT:
+Required JSON structure:
 
 {
-  "character_locks": [
+  "duration": number,
+  "sceneDuration": 10,
+  "totalScenes": number,
+  "characterLocks": [
     {
       "name": "Character name",
-      "description": "Permanent detailed physical appearance, clothing, accessories, and distinguishing features"
+      "description": "Permanent detailed character appearance lock"
     }
   ],
   "scenes": [
@@ -296,69 +258,113 @@ JSON FORMAT:
       "start": 0,
       "end": 10,
       "duration": 10,
-      "visual_prompt": "Detailed cinematic visual description with character consistency",
-      "camera": "Camera shot and camera movement",
-      "lighting": "Lighting style and mood",
-      "action": "What the character does during this 10-second scene",
-      "dialogue": "Short dialogue or empty string",
-      "voiceover": "Short voiceover or empty string",
-      "continuity": "How this scene connects to the previous and next scene"
+      "visual_prompt": "Detailed visual prompt",
+      "camera": "Camera movement",
+      "lighting": "Lighting description",
+      "action": "Action description",
+      "dialogue": "Short spoken dialogue",
+      "voiceover": "Short voiceover",
+      "continuity": "Continuity instructions"
     }
   ]
-}`
+}
+
+The requested duration is ${totalSeconds} seconds.
+Therefore create exactly ${totalScenes} scenes.
+
+USER STORY:
+${prompt}
+`;
+
+        const result = await ai.models.generateContent({
+            model: "gemini-3.8-flash",
+            contents: systemPrompt
         });
 
-        let text = response.text.trim();
+        let text = result.text || "";
 
-        text = text.replace(/^```json\\s*/i, '');
-        text = text.replace(/^```\\s*/i, '');
-        text = text.replace(/\\s*```$/i, '');
+        text = text.replace(/^```json\s*/i, "");
+        text = text.replace(/^```\s*/i, "");
+        text = text.replace(/\s*```$/i, "");
 
-        const aiData = JSON.parse(text);
+        let project;
+
+        try {
+            project = JSON.parse(text);
+        } catch (parseError) {
+
+            return res.status(500).json({
+                error: "Gemini returned invalid JSON",
+                raw: text
+            });
+        }
 
         res.json({
-            status: 'success',
-            message: 'Gemini scene plan created successfully',
-
-            project: {
-                duration: totalSeconds,
-                sceneDuration: sceneDuration,
-                totalScenes: totalScenes,
-                characterLocks: aiData.character_locks || [],
-                scenes: aiData.scenes || []
-            }
+            status: "success",
+            message: "AI scene plan created successfully",
+            project: project
         });
 
     } catch (error) {
 
-        console.error('Gemini Error:', error);
+        console.error("Gemini Error:", error);
 
-if (error?.status === 429 || error?.code === 429) {
-    return res.status(429).json({
-        error: 'Gemini quota exceeded',
-        message: 'Gemini free-tier limit reached. Please wait and try again later.'
-    });
-}
+        if (
+            error?.status === 429 ||
+            error?.code === 429
+        ) {
 
-res.status(500).json({
-    error: 'Gemini scene planning failed',
-    details: error.message
-});
+            return res.status(429).json({
+                error: "Gemini quota exceeded",
+                message:
+                    "Gemini free-tier limit reached. Please wait and try again later."
+            });
+        }
+
+        res.status(500).json({
+            error: "AI scene planning failed",
+            message: error?.message || "Unknown Gemini error"
+        });
     }
 });
 
 
-// Test API
-app.get('/api/test', (req, res) => {
+/* =========================================================
+   CREATE PROJECT
+========================================================= */
+
+app.post("/api/create-project", (req, res) => {
+
+    const { prompt, duration } = req.body;
+
+    if (!prompt) {
+        return res.status(400).json({
+            error: "Video prompt is required"
+        });
+    }
+
+    const totalSeconds = Number(duration) || 10;
+    const totalScenes = Math.ceil(totalSeconds / 10);
+
     res.json({
-        message: 'API is working perfectly!',
-        timestamp: new Date()
+        status: "success",
+        message: "Project created successfully",
+        project: {
+            prompt,
+            duration: totalSeconds,
+            sceneDuration: 10,
+            totalScenes
+        }
     });
 });
 
 
-const PORT = process.env.PORT || 3000;
+/* =========================================================
+   START SERVER
+========================================================= */
 
 app.listen(PORT, () => {
-    console.log(`SANAPTAI backend running on port ${PORT}`);
+
+    console.log(`SANAPTAI server running on port ${PORT}`);
+
 });
