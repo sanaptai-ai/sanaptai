@@ -3,12 +3,11 @@ import cors from "cors";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
-
-const PORT = process.env.PORT || 3000;
 
 let ai = null;
 
@@ -18,17 +17,24 @@ if (process.env.GEMINI_API_KEY) {
   });
 }
 
-/* =========================
-   HELPERS
-========================= */
+// --------------------------------------------------
+// HELPERS
+// --------------------------------------------------
 
-function cleanText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
+function cleanText(text = "") {
+  return String(text).replace(/\s+/g, " ").trim();
+}
+
+function splitSentences(text = "") {
+  return cleanText(text)
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
 function has(text, words) {
-  const lower = text.toLowerCase();
-  return words.some(word => lower.includes(word));
+  const t = text.toLowerCase();
+  return words.some(w => t.includes(w.toLowerCase()));
 }
 
 function unique(arr) {
@@ -36,960 +42,951 @@ function unique(arr) {
 }
 
 function durationToSeconds(duration) {
-  const value = Number(duration);
-  return Number.isFinite(value) && value > 0 ? value : 30;
+  const n = Number(duration);
+  return Number.isFinite(n) && n > 0 ? n : 30;
 }
 
-function sceneCount(duration) {
-  return Math.ceil(durationToSeconds(duration) / 10);
+function createSceneCount(seconds) {
+  return Math.max(1, Math.ceil(seconds / 10));
 }
 
-function splitSentences(text) {
-  return cleanText(text)
-    .split(/(?<=[.!?])\s+/)
-    .map(x => x.trim())
-    .filter(Boolean);
-}
-
-/* =========================
-   CHARACTER PARSER
-========================= */
+// --------------------------------------------------
+// CHARACTER PARSER
+// --------------------------------------------------
 
 function parseCharacters(text) {
-  const result = [];
+  const t = text.toLowerCase();
+  const characters = [];
 
-  if (has(text, ["young boy", "little boy", "12-year-old boy", "boy"])) {
-    result.push({
-      id: "main_boy",
-      role: "main_character",
-      name: "young boy",
+  // Main character
+  if (
+    t.includes("12-year-old boy") ||
+    t.includes("12 year old boy") ||
+    t.includes("young boy") ||
+    t.includes("little boy")
+  ) {
+    characters.push({
+      role: "main character",
       description:
-        "12-year-old boy, youthful round face, warm natural skin tone, dark brown eyes, short slightly messy black hair, slim child body, sky-blue T-shirt, dark blue jeans and white sneakers"
+        "12-year-old boy Ethan, youthful face, dark brown eyes, short slightly messy black hair, slim child build, consistent clothing and proportions"
+    });
+  } else if (
+    t.includes("13-year-old boy") ||
+    t.includes("13 year old boy")
+  ) {
+    characters.push({
+      role: "main character",
+      description:
+        "13-year-old boy, youthful face, dark eyes, short black hair, slim child build, consistent clothing and proportions"
+    });
+  } else if (t.includes("boy")) {
+    characters.push({
+      role: "main character",
+      description:
+        "young boy, youthful face, dark eyes, short black hair, slim child build, consistent clothing and proportions"
+    });
+  } else if (t.includes("girl")) {
+    characters.push({
+      role: "main character",
+      description:
+        "young girl, youthful face, dark eyes, natural hairstyle, slim child build, consistent clothing and proportions"
+    });
+  } else if (t.includes("woman")) {
+    characters.push({
+      role: "main character",
+      description:
+        "adult woman, natural facial features, realistic proportions, consistent clothing and appearance"
+    });
+  } else if (t.includes("man")) {
+    characters.push({
+      role: "main character",
+      description:
+        "adult man, natural facial features, realistic proportions, consistent clothing and appearance"
     });
   }
 
-  if (has(text, ["young girl", "little girl", "12-year-old girl", "girl"])) {
-    result.push({
-      id: "main_girl",
-      role: "main_character",
-      name: "young girl",
+  if (t.includes("mother") || t.includes("mom")) {
+    characters.push({
+      role: "mother",
       description:
-        "12-year-old girl, youthful face, warm natural skin tone, dark brown eyes, shoulder-length dark hair, light-blue shirt, dark jeans and white sneakers"
+        "Ethan's mother, adult woman, warm natural face, medium build, consistent hairstyle and clothing"
     });
   }
 
-  if (has(text, ["mother", "mom", "mum"])) {
-    result.push({
-      id: "mother",
-      role: "supporting_character",
-      name: "mother",
+  if (t.includes("father") || t.includes("dad")) {
+    characters.push({
+      role: "father",
       description:
-        "adult woman with consistent face, hairstyle, body proportions and simple casual clothing"
+        "Ethan's father, adult man, natural face, medium build, consistent hairstyle and clothing"
     });
   }
 
-  if (has(text, ["father", "dad"])) {
-    result.push({
-      id: "father",
-      role: "supporting_character",
-      name: "father",
+  if (t.includes("teacher")) {
+    characters.push({
+      role: "teacher",
       description:
-        "adult man with consistent face, hairstyle, body proportions and casual clothing"
+        "adult school teacher, realistic appearance, consistent clothing"
     });
   }
 
-  if (has(text, ["teacher"])) {
-    result.push({
-      id: "teacher",
-      role: "supporting_character",
-      name: "teacher",
+  if (t.includes("friend")) {
+    characters.push({
+      role: "friend",
       description:
-        "adult school teacher with consistent appearance and professional clothing"
+        "young friend, realistic child appearance, consistent clothing"
     });
   }
 
-  if (has(text, ["friend", "best friend"])) {
-    result.push({
-      id: "friend",
-      role: "supporting_character",
-      name: "friend",
-      description:
-        "same-age friend with consistent face, hairstyle, body proportions and clothing"
-    });
-  }
-
-  if (has(text, ["owner", "pet owner"])) {
-    result.push({
-      id: "pet_owner",
-      role: "supporting_character",
-      name: "pet owner",
-      description:
-        "adult pet owner with consistent face, short dark hair, medium build, casual jacket and jeans"
-    });
-  }
-
-  if (has(text, ["villain", "enemy", "bad guy"])) {
-    result.push({
-      id: "villain",
+  if (
+    t.includes("dangerous man") ||
+    t.includes("strange man") ||
+    t.includes("villain") ||
+    t.includes("enemy") ||
+    t.includes("bad guy")
+  ) {
+    characters.push({
       role: "antagonist",
-      name: "villain",
       description:
-        "adult antagonist with consistent face, hairstyle, body proportions and dark clothing"
+        "dangerous adult man, intimidating presence, dark jacket, rugged appearance, consistent face and clothing"
     });
   }
 
-  return result;
+  if (
+    t.includes("girl trapped") ||
+    t.includes("frightened girl") ||
+    t.includes("young girl trapped")
+  ) {
+    characters.push({
+      role: "rescued girl",
+      description:
+        "frightened young girl, child, worried expression, consistent face, hairstyle and clothing"
+    });
+  }
+
+  if (
+    t.includes("girl's family") ||
+    t.includes("girls family") ||
+    t.includes("her family") ||
+    t.includes("family is waiting")
+  ) {
+    characters.push({
+      role: "girl's family",
+      description:
+        "family members waiting anxiously for the rescued girl, realistic appearance and consistent clothing"
+    });
+  }
+
+  return characters;
 }
 
-/* =========================
-   ANIMAL PARSER
-========================= */
-
-function parseAnimals(text) {
-  const result = [];
-
-  if (has(text, ["kitten"])) {
-    result.push({
-      id: "kitten",
-      name: "kitten",
-      description:
-        "small abandoned kitten with soft light-gray fur, white chest, white paws and expressive green eyes"
-    });
-  }
-
-  if (has(text, ["puppy", "dog"])) {
-    result.push({
-      id: "puppy",
-      name: "puppy",
-      description:
-        "small friendly puppy with soft brown-and-white fur and expressive dark eyes"
-    });
-  }
-
-  if (has(text, ["horse"])) {
-    result.push({
-      id: "horse",
-      name: "horse",
-      description:
-        "strong brown horse with black mane and consistent appearance"
-    });
-  }
-
-  if (has(text, ["rabbit"])) {
-    result.push({
-      id: "rabbit",
-      name: "rabbit",
-      description:
-        "small white rabbit with soft fur and expressive dark eyes"
-    });
-  }
-
-  if (has(text, ["bird"])) {
-    result.push({
-      id: "bird",
-      name: "bird",
-      description:
-        "small bird with consistent feathers and natural movement"
-    });
-  }
-
-  if (has(text, ["snake"])) {
-    result.push({
-      id: "snake",
-      name: "snake",
-      description:
-        "large dark snake with consistent markings and realistic movement"
-    });
-  }
-
-  return result;
-}
-
-/* =========================
-   LOCATION PARSER
-========================= */
+// --------------------------------------------------
+// LOCATION PARSER
+// --------------------------------------------------
 
 function parseLocations(text) {
-  const result = [];
+  const t = text.toLowerCase();
+  const locations = [];
 
-  if (has(text, ["school", "classroom"])) result.push("school");
-  if (has(text, ["street", "road", "sidewalk"])) result.push("street");
-  if (has(text, ["city", "downtown"])) result.push("city");
-  if (has(text, ["park"])) result.push("park");
-  if (has(text, ["forest", "woods"])) result.push("forest");
-  if (has(text, ["home", "house", "room", "bedroom", "kitchen"])) result.push("home");
-  if (has(text, ["office"])) result.push("office");
-  if (has(text, ["hospital"])) result.push("hospital");
-  if (has(text, ["village"])) result.push("village");
-  if (has(text, ["mountain"])) result.push("mountain");
+  if (has(t, ["small town", "town"])) locations.push("small town");
+  if (has(t, ["house", "home", "floor"])) locations.push("family house");
+  if (has(t, ["school"])) locations.push("school");
+  if (has(t, ["street", "road"])) locations.push("town street");
+  if (has(t, ["forest", "woods"])) locations.push("nearby forest");
+  if (has(t, ["cabin"])) locations.push("abandoned cabin");
+  if (has(t, ["room", "locked room"])) locations.push("locked cabin room");
+  if (has(t, ["tunnel"])) locations.push("secret tunnel");
+  if (has(t, ["sunrise", "sunrise town"])) locations.push("town at sunrise");
 
-  return unique(result);
+  return unique(locations);
 }
 
-/* =========================
-   OBJECT PARSER
-========================= */
+// --------------------------------------------------
+// OBJECT / PROP PARSER
+// --------------------------------------------------
 
 function parseObjects(text) {
-  const result = [];
+  const t = text.toLowerCase();
+  const objects = [];
 
-  if (has(text, ["poster"])) result.push("missing-pet poster");
-  if (has(text, ["shelter"])) result.push("broken shelter");
-  if (has(text, ["collar"])) result.push("pet collar");
-  if (has(text, ["food", "feed", "feeding"])) result.push("pet food");
-  if (has(text, ["towel", "dry", "dried"])) result.push("dry towel");
-  if (has(text, ["umbrella"])) result.push("umbrella");
-  if (has(text, ["phone"])) result.push("phone");
-  if (has(text, ["letter"])) result.push("letter");
-  if (has(text, ["photo", "photograph"])) result.push("photo");
-  if (has(text, ["backpack", "school bag"])) result.push("backpack");
-  if (has(text, ["key"])) result.push("key");
-
-  if (has(text, ["car", "vehicle", "truck", "bus"])) {
-    result.push("vehicle");
+  if (has(t, ["wooden box", "old box", "box"])) {
+    objects.push("old wooden box");
   }
 
-  return unique(result);
+  if (has(t, ["mysterious map", "map"])) {
+    objects.push("mysterious map");
+  }
+
+  if (has(t, ["locked room", "lock", "locked door"])) {
+    objects.push("locked door");
+  }
+
+  if (has(t, ["secret tunnel", "tunnel"])) {
+    objects.push("secret tunnel entrance");
+  }
+
+  if (has(t, ["floor"])) {
+    objects.push("wooden floor");
+  }
+
+  return unique(objects);
 }
 
-/* =========================
-   CONDITIONS
-========================= */
+// --------------------------------------------------
+// CONDITIONS
+// --------------------------------------------------
 
 function parseConditions(text) {
-  const result = [];
+  const t = text.toLowerCase();
+  const conditions = [];
 
-  if (has(text, ["rain", "rainstorm", "raining", "storm"])) {
-    result.push("rainstorm");
-  }
+  if (has(t, ["evening"])) conditions.push("evening");
+  if (has(t, ["night"])) conditions.push("night");
+  if (has(t, ["sunrise", "morning"])) conditions.push("sunrise");
+  if (has(t, ["rain", "rainstorm", "storm"])) conditions.push("rainstorm");
+  if (has(t, ["dark"])) conditions.push("dark atmosphere");
 
-  if (has(text, ["snow", "snowstorm"])) result.push("snow");
-  if (has(text, ["night"])) result.push("night");
-  if (has(text, ["evening"])) result.push("evening");
-  if (has(text, ["morning"])) result.push("morning");
-  if (has(text, ["dark"])) result.push("dark atmosphere");
-
-  return unique(result);
+  return unique(conditions);
 }
 
-/* =========================
-   SPECIAL STORY TIMELINES
-========================= */
+// --------------------------------------------------
+// SPECIAL STORY DETECTION
+// --------------------------------------------------
 
-function kittenTimeline(text) {
-  const lower = text.toLowerCase();
+function isEthanCabinStory(text) {
+  const t = text.toLowerCase();
 
-  if (
-    !lower.includes("kitten") ||
-    !lower.includes("owner") ||
-    !lower.includes("poster") ||
-    !(
-      lower.includes("rain") ||
-      lower.includes("storm")
-    )
-  ) {
-    return null;
-  }
+  return (
+    t.includes("ethan") &&
+    t.includes("wooden box") &&
+    t.includes("map") &&
+    t.includes("forest") &&
+    t.includes("cabin") &&
+    t.includes("trapped") &&
+    t.includes("tunnel")
+  );
+}
 
+// --------------------------------------------------
+// ETHAN STORY TIMELINE
+// --------------------------------------------------
+
+function ethanTimeline() {
   return [
     {
-      id: "k1",
-      location: "street",
-      characters: ["main_character"],
-      animals: [],
-      objects: [],
-      action: "The boy walks home from school as a sudden rainstorm begins.",
-      visual:
-        "A young boy walks home from school on a city street as dark storm clouds gather and heavy rain suddenly begins."
+      id: "town_intro",
+      location: "small town",
+      characters: ["main character", "mother"],
+      props: [],
+      action:
+        "Ethan lives with his mother in a quiet small town, establishing his ordinary life before the mystery begins.",
+      dialogue:
+        "Life here is quiet, but I wonder what might be waiting beyond this town.",
+      voiceover:
+        "Twelve-year-old Ethan lived with his mother in a quiet small town, unaware that an unusual adventure was about to begin."
     },
+
     {
-      id: "k2",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: ["broken shelter"],
-      action: "The boy notices an abandoned kitten hiding beneath a broken shelter.",
-      visual:
-        "The boy stops beside a broken roadside shelter and discovers a tiny abandoned kitten hiding underneath."
+      id: "box_discovery",
+      location: "family house",
+      characters: ["main character"],
+      props: ["old wooden box", "wooden floor"],
+      action:
+        "One evening, Ethan notices something unusual beneath a loose section of the wooden floor and carefully uncovers an old wooden box.",
+      dialogue:
+        "What's this old box doing beneath our floor?",
+      voiceover:
+        "One evening, Ethan discovered something hidden beneath the floor of his home."
     },
+
     {
-      id: "k3",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: ["broken shelter"],
-      action: "The boy shields the frightened kitten from the rain.",
-      visual:
-        "The boy crouches beside the frightened kitten and uses his body to shield it from the heavy rain."
+      id: "open_box",
+      location: "family house",
+      characters: ["main character"],
+      props: ["old wooden box"],
+      action:
+        "Ethan opens the weathered wooden box and carefully examines its mysterious contents.",
+      dialogue:
+        "Someone hid this here for a reason.",
+      voiceover:
+        "The forgotten box seemed to contain a secret that had been hidden for years."
     },
+
     {
-      id: "k4",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: [],
-      action: "The boy carefully picks up the kitten and decides to take it somewhere safe.",
-      visual:
-        "The boy gently picks up the wet kitten and holds it securely against his chest."
+      id: "map_found",
+      location: "family house",
+      characters: ["main character"],
+      props: ["old wooden box", "mysterious map"],
+      action:
+        "Ethan unfolds a mysterious map found inside the wooden box and studies its strange markings.",
+      dialogue:
+        "This isn't an ordinary map.",
+      voiceover:
+        "Inside the box, Ethan found a mysterious map covered with unfamiliar markings."
     },
+
     {
-      id: "k5",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: [],
-      action: "The boy hurries home through the rain while protecting the kitten.",
-      visual:
-        "The boy walks quickly through the rainy street while carefully protecting the kitten in his arms."
+      id: "map_clue",
+      location: "family house",
+      characters: ["main character"],
+      props: ["mysterious map"],
+      action:
+        "Ethan follows the map's markings with his finger and realizes they point toward the nearby forest.",
+      dialogue:
+        "The map is pointing to the forest.",
+      voiceover:
+        "The markings appeared to lead directly toward the forest outside town."
     },
+
     {
-      id: "k6",
-      location: "home",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: ["dry towel"],
-      action: "The boy places the kitten somewhere warm and starts drying its wet fur.",
-      visual:
-        "Inside a warm home, the boy gently places the kitten down and begins drying its wet fur with a soft towel."
+      id: "forest_departure",
+      location: "nearby forest",
+      characters: ["main character"],
+      props: ["mysterious map"],
+      action:
+        "Ethan follows the map into the nearby forest, moving carefully between the trees.",
+      dialogue:
+        "I'll follow the map, but I'll be careful.",
+      voiceover:
+        "Driven by curiosity, Ethan entered the forest and followed the mysterious route."
     },
+
     {
-      id: "k7",
-      location: "home",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: ["pet food"],
-      action: "The boy prepares food and gives it to the hungry kitten.",
-      visual:
-        "The boy places fresh food into a small bowl and watches the hungry kitten begin eating."
+      id: "forest_deeper",
+      location: "nearby forest",
+      characters: ["main character"],
+      props: ["mysterious map"],
+      action:
+        "Ethan walks deeper into the forest as the familiar town disappears behind him.",
+      dialogue:
+        "I'm farther from home than I expected.",
+      voiceover:
+        "The deeper Ethan traveled, the more isolated the forest became."
     },
+
     {
-      id: "k8",
-      location: "home",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: [],
-      action: "The boy realizes the kitten may have a family searching for it.",
-      visual:
-        "The boy looks thoughtfully at the calm kitten and realizes that someone may be searching for it."
+      id: "cabin_found",
+      location: "nearby forest",
+      characters: ["main character"],
+      props: ["mysterious map"],
+      action:
+        "Ethan discovers an abandoned cabin hidden deep among the trees and cautiously approaches it.",
+      dialogue:
+        "That cabin wasn't on the map by accident.",
+      voiceover:
+        "Deep in the forest, Ethan discovered an abandoned cabin hidden among the trees."
     },
+
     {
-      id: "k9",
-      location: "city",
-      characters: ["main_character"],
-      animals: [],
-      objects: ["missing-pet poster"],
-      action: "The boy notices a missing-pet poster on a public notice board.",
-      visual:
-        "The boy walks past a city notice board and suddenly notices a missing-pet poster."
+      id: "strange_sound",
+      location: "abandoned cabin",
+      characters: ["main character"],
+      props: [],
+      action:
+        "Ethan stops outside the cabin when he hears a strange sound coming from somewhere inside.",
+      dialogue:
+        "Wait... someone is inside.",
+      voiceover:
+        "Then a strange sound came from inside the abandoned cabin."
     },
+
     {
-      id: "k10",
-      location: "city",
-      characters: ["main_character"],
-      animals: [],
-      objects: ["missing-pet poster"],
-      action: "The boy studies the poster and recognizes the kitten in the photograph.",
-      visual:
-        "The boy closely examines the missing-pet poster and recognizes the kitten shown in its photograph."
+      id: "enter_cabin",
+      location: "abandoned cabin",
+      characters: ["main character"],
+      props: [],
+      action:
+        "Ethan slowly enters the abandoned cabin and looks around for the source of the sound.",
+      dialogue:
+        "I need to find out who's in here.",
+      voiceover:
+        "Although frightened, Ethan stepped inside to discover what was happening."
     },
+
     {
-      id: "k11",
-      location: "city",
-      characters: ["main_character"],
-      animals: ["kitten"],
-      objects: ["missing-pet poster"],
-      action: "The boy follows the information from the poster to contact the owner.",
-      visual:
-        "The boy uses the contact information from the poster while keeping the kitten safely beside him."
+      id: "girl_found",
+      location: "locked cabin room",
+      characters: ["main character", "rescued girl"],
+      props: ["locked door"],
+      action:
+        "Ethan discovers a frightened girl trapped behind a locked door inside the cabin.",
+      dialogue:
+        "Don't be afraid. I'll get you out.",
+      voiceover:
+        "Behind a locked door, Ethan found a frightened girl who desperately needed help."
     },
+
     {
-      id: "k12",
-      location: "city",
-      characters: ["main_character", "pet_owner"],
-      animals: ["kitten"],
-      objects: [],
-      action: "The boy meets the kitten's owner and brings the animal back to them.",
-      visual:
-        "The boy meets the relieved pet owner and carefully hands the kitten back to its grateful family."
+      id: "rescue_decision",
+      location: "locked cabin room",
+      characters: ["main character", "rescued girl"],
+      props: ["locked door"],
+      action:
+        "Ethan promises the frightened girl that he will find a way to rescue her.",
+      dialogue:
+        "Stay calm. We're getting out of here.",
+      voiceover:
+        "Ethan knew he could not leave the girl behind."
+    },
+
+    {
+      id: "danger_arrives",
+      location: "abandoned cabin",
+      characters: ["main character", "rescued girl", "antagonist"],
+      props: [],
+      action:
+        "A dangerous man suddenly arrives at the cabin, forcing Ethan and the girl to hide.",
+      dialogue:
+        "Someone's coming. Stay completely quiet.",
+      voiceover:
+        "Suddenly, a dangerous man arrived at the cabin, turning the rescue into a desperate escape."
+    },
+
+    {
+      id: "hide",
+      location: "abandoned cabin",
+      characters: ["main character", "rescued girl"],
+      props: [],
+      action:
+        "Ethan and the girl hide silently while the dangerous man searches the cabin.",
+      dialogue:
+        "We have to wait for the right moment.",
+      voiceover:
+        "Ethan and the girl stayed hidden while the danger moved through the cabin."
+    },
+
+    {
+      id: "search_exit",
+      location: "abandoned cabin",
+      characters: ["main character", "rescued girl"],
+      props: [],
+      action:
+        "Ethan quietly searches the cabin for another way out while keeping the girl close.",
+      dialogue:
+        "There has to be another way out.",
+      voiceover:
+        "Instead of confronting the danger, Ethan searched for a safer escape route."
+    },
+
+    {
+      id: "tunnel_found",
+      location: "abandoned cabin",
+      characters: ["main character", "rescued girl"],
+      props: ["secret tunnel entrance"],
+      action:
+        "Ethan discovers a hidden opening beneath the cabin that leads into a secret tunnel.",
+      dialogue:
+        "I found it. There's a tunnel beneath us.",
+      voiceover:
+        "Beneath the cabin, Ethan discovered the hidden escape route marked by the old mystery."
+    },
+
+    {
+      id: "tunnel_escape",
+      location: "secret tunnel",
+      characters: ["main character", "rescued girl"],
+      props: ["secret tunnel entrance"],
+      action:
+        "Ethan leads the girl through the narrow secret tunnel, moving quickly toward the forest.",
+      dialogue:
+        "Keep moving. We're almost outside.",
+      voiceover:
+        "The two escaped through the secret tunnel and emerged beyond the cabin."
+    },
+
+    {
+      id: "forest_escape",
+      location: "nearby forest",
+      characters: ["main character", "rescued girl"],
+      props: [],
+      action:
+        "Ethan and the girl run through the forest together, putting distance between themselves and the cabin.",
+      dialogue:
+        "Don't stop. The town is ahead.",
+      voiceover:
+        "They hurried through the forest, finally leaving the danger behind."
+    },
+
+    {
+      id: "sunrise_journey",
+      location: "town at sunrise",
+      characters: ["main character", "rescued girl"],
+      props: [],
+      action:
+        "As sunrise approaches, Ethan brings the exhausted girl safely toward the edge of town.",
+      dialogue:
+        "We're almost home.",
+      voiceover:
+        "By sunrise, Ethan and the girl were finally close to the safety of town."
+    },
+
+    {
+      id: "family_reunion",
+      location: "small town",
+      characters: ["main character", "rescued girl", "girl's family"],
+      props: [],
+      action:
+        "Ethan brings the girl safely back to town, where her relieved family rushes forward to welcome her.",
+      dialogue:
+        "Your family has been waiting for you.",
+      voiceover:
+        "At the edge of town, the girl's family was waiting, and the long search finally ended."
+    },
+
+    {
+      id: "final_resolution",
+      location: "small town",
+      characters: ["main character", "rescued girl", "girl's family"],
+      props: [],
+      action:
+        "Ethan watches as the rescued girl reunites with her family, bringing the dangerous adventure to a peaceful ending.",
+      dialogue:
+        "I'm just glad you're finally safe.",
+      voiceover:
+        "Ethan returned home knowing that one mysterious map had led him to an unforgettable rescue."
     }
   ];
 }
 
-/* =========================
-   PUPPY TIMELINE
-========================= */
-
-function puppyTimeline(text) {
-  const lower = text.toLowerCase();
-
-  if (
-    !(lower.includes("puppy") || lower.includes("dog")) ||
-    !lower.includes("owner")
-  ) {
-    return null;
-  }
-
-  return [
-    {
-      id: "p1",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["puppy"],
-      objects: [],
-      action: "The boy notices a lost puppy wandering alone.",
-      visual:
-        "The young boy notices a small lost puppy standing alone on a busy city street."
-    },
-    {
-      id: "p2",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["puppy"],
-      objects: [],
-      action: "The boy carefully approaches the frightened puppy.",
-      visual:
-        "The boy slowly kneels and approaches the frightened puppy without startling it."
-    },
-    {
-      id: "p3",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["puppy"],
-      objects: [],
-      action: "The boy gains the puppy's trust.",
-      visual:
-        "The boy gently comforts the puppy until it begins trusting him."
-    },
-    {
-      id: "p4",
-      location: "street",
-      characters: ["main_character"],
-      animals: ["puppy"],
-      objects: ["pet collar"],
-      action: "The boy checks the puppy's collar for identifying information.",
-      visual:
-        "The boy carefully examines the puppy's collar searching for a name or contact detail."
-    },
-    {
-      id: "p5",
-      location: "city",
-      characters: ["main_character"],
-      animals: ["puppy"],
-      objects: [],
-      action: "The boy begins searching for the puppy's owner.",
-      visual:
-        "The boy walks through the city with the puppy while searching for clues about its owner."
-    },
-    {
-      id: "p6",
-      location: "city",
-      characters: ["main_character"],
-      animals: ["puppy"],
-      objects: ["phone"],
-      action: "The boy uses his phone to follow a possible lead.",
-      visual:
-        "The boy checks information on his phone while the puppy waits beside him."
-    },
-    {
-      id: "p7",
-      location: "city",
-      characters: ["main_character", "pet_owner"],
-      animals: ["puppy"],
-      objects: [],
-      action: "The boy finds the puppy's owner.",
-      visual:
-        "The boy recognizes the puppy's relieved owner approaching from across the street."
-    },
-    {
-      id: "p8",
-      location: "city",
-      characters: ["main_character", "pet_owner"],
-      animals: ["puppy"],
-      objects: [],
-      action: "The boy reunites the puppy with its grateful owner.",
-      visual:
-        "The puppy happily runs into its owner's arms during an emotional reunion."
-    }
-  ];
-}
-
-/* =========================
-   GENERIC TIMELINE
-========================= */
+// --------------------------------------------------
+// GENERIC TIMELINE
+// --------------------------------------------------
 
 function genericTimeline(text) {
   const sentences = splitSentences(text);
 
-  if (!sentences.length) {
-    return [{
-      id: "g1",
-      location: "environment",
-      characters: ["main_character"],
-      animals: [],
-      objects: [],
-      action: "The story begins.",
-      visual: "Cinematic establishing shot introducing the story and main character."
-    }];
-  }
-
-  return sentences.map((sentence, index) => {
-    const lower = sentence.toLowerCase();
-
-    let location = "environment";
-
-    if (lower.includes("school")) location = "school";
-    else if (
-      lower.includes("home") ||
-      lower.includes("house") ||
-      lower.includes("room")
-    ) location = "home";
-    else if (
-      lower.includes("street") ||
-      lower.includes("road") ||
-      lower.includes("sidewalk")
-    ) location = "street";
-    else if (lower.includes("city")) location = "city";
-    else if (lower.includes("park")) location = "park";
-    else if (
-      lower.includes("forest") ||
-      lower.includes("woods")
-    ) location = "forest";
-    else if (lower.includes("office")) location = "office";
-
-    const animals = [];
-
-    if (lower.includes("kitten")) animals.push("kitten");
-    if (lower.includes("puppy") || lower.includes("dog")) animals.push("puppy");
-
-    return {
-      id: `g${index + 1}`,
-      location,
-      characters: ["main_character"],
-      animals,
-      objects: [],
-      action: sentence,
-      visual:
-        `Cinematic realistic scene showing the main character as ${sentence.toLowerCase()}`
-    };
-  });
+  return sentences.map((sentence, index) => ({
+    id: `story_${index + 1}`,
+    location: "story environment",
+    characters: ["main character"],
+    props: [],
+    action: sentence,
+    dialogue: createGenericDialogue(sentence, index),
+    voiceover: sentence
+  }));
 }
 
-/* =========================
-   SUB-SCENE EXPANSION
-========================= */
+function createGenericDialogue(sentence, index) {
+  const lower = sentence.toLowerCase();
+
+  if (lower.includes("find") || lower.includes("discover")) {
+    return "Wait... what is that?";
+  }
+
+  if (lower.includes("danger") || lower.includes("attack")) {
+    return "We have to be careful.";
+  }
+
+  if (lower.includes("run") || lower.includes("escape")) {
+    return "Keep moving. We have to get out.";
+  }
+
+  if (lower.includes("decide") || lower.includes("choose")) {
+    return "I have to make a choice.";
+  }
+
+  if (lower.includes("help") || lower.includes("rescue")) {
+    return "I'm going to help.";
+  }
+
+  return [
+    "Something is changing.",
+    "I need to understand this.",
+    "I can't ignore what I found.",
+    "Let's keep moving.",
+    "I have to be careful.",
+    "There's more to this story."
+  ][index % 6];
+}
+
+// --------------------------------------------------
+// EXPANSION ENGINE
+// --------------------------------------------------
 
 function expandBeat(beat) {
-  const action = beat.action;
-  const visual = beat.visual;
-
   return [
     {
       ...beat,
-      sub: "setup",
-      action: `The story moment begins: ${action}`,
-      visual:
-        `${visual} Establish the environment and clearly show the beginning of this moment.`
+      phase: "setup",
+      action: `${beat.action} Establish the situation clearly without introducing unrelated elements.`,
+      dialogue: beat.dialogue,
+      voiceover: beat.voiceover
     },
+
     {
       ...beat,
-      sub: "reaction",
-      action:
-        `The main character reacts naturally to what is happening: ${action}`,
-      visual:
-        `${visual} Focus on the character's natural reaction and emotion.`
+      phase: "reaction",
+      action: `Show the characters reacting naturally to the situation: ${beat.action}`,
+      dialogue: reactionDialogue(beat),
+      voiceover: reactionVoiceover(beat)
     },
+
     {
       ...beat,
-      sub: "decision",
-      action:
-        `The main character makes a decision connected to this moment.`,
-      visual:
-        `${visual} Show the character making a clear decision that moves the story forward.`
+      phase: "decision",
+      action: `Show the main character making a clear decision connected directly to the story event: ${beat.action}`,
+      dialogue: decisionDialogue(beat),
+      voiceover: decisionVoiceover(beat)
     },
+
     {
       ...beat,
-      sub: "action",
-      action:
-        `The main character acts on that decision.`,
-      visual:
-        `${visual} Show the main physical action clearly and naturally.`
+      phase: "action",
+      action: `Show the main physical action clearly: ${beat.action}`,
+      dialogue: actionDialogue(beat),
+      voiceover: actionVoiceover(beat)
     },
+
     {
       ...beat,
-      sub: "consequence",
-      action:
-        `The action creates an immediate consequence that leads toward the next story beat.`,
-      visual:
-        `${visual} Show the immediate consequence while preserving all continuity.`
+      phase: "consequence",
+      action: `Show the immediate consequence that naturally leads into the next story event.`,
+      dialogue: consequenceDialogue(beat),
+      voiceover: consequenceVoiceover(beat)
     }
   ];
 }
 
-/* =========================
-   BUILD LONG TIMELINE
-========================= */
+function reactionDialogue(beat) {
+  if (beat.id === "box_discovery") return "Why was this hidden here?";
+  if (beat.id === "map_found") return "Where does this map lead?";
+  if (beat.id === "strange_sound") return "That sound came from inside.";
+  if (beat.id === "girl_found") return "Who locked you in here?";
+  if (beat.id === "danger_arrives") return "We can't let him see us.";
+  if (beat.id === "tunnel_found") return "This could be our way out.";
+  if (beat.id === "family_reunion") return "They're here. You're safe now.";
+  return "Something about this feels important.";
+}
+
+function decisionDialogue(beat) {
+  if (beat.id === "map_clue") return "I'm going to follow this clue.";
+  if (beat.id === "forest_departure") return "I'll follow the map carefully.";
+  if (beat.id === "rescue_decision") return "I won't leave you here.";
+  if (beat.id === "search_exit") return "I'll find another way out.";
+  if (beat.id === "tunnel_found") return "We're taking this route.";
+  return "I know what I need to do.";
+}
+
+function actionDialogue(beat) {
+  if (beat.id === "open_box") return "Let's see what's inside.";
+  if (beat.id === "map_found") return "This map could explain everything.";
+  if (beat.id === "enter_cabin") return "I'm going inside.";
+  if (beat.id === "hide") return "Stay close and stay quiet.";
+  if (beat.id === "tunnel_escape") return "Follow me through the tunnel.";
+  if (beat.id === "forest_escape") return "We're getting farther away.";
+  return "Keep going.";
+}
+
+function consequenceDialogue(beat) {
+  if (beat.id === "box_discovery") return "This changes everything.";
+  if (beat.id === "map_clue") return "The forest is our next stop.";
+  if (beat.id === "cabin_found") return "Now we need to know what's inside.";
+  if (beat.id === "girl_found") return "We need to get you out.";
+  if (beat.id === "danger_arrives") return "We need another escape route.";
+  if (beat.id === "tunnel_found") return "This is our chance.";
+  if (beat.id === "family_reunion") return "The nightmare is finally over.";
+  return "Now we know what comes next.";
+}
+
+function reactionVoiceover(beat) {
+  return `The situation becomes clearer as the characters react to what is happening. ${beat.voiceover}`;
+}
+
+function decisionVoiceover(beat) {
+  return `Ethan makes a deliberate choice that directly moves the story forward. ${beat.voiceover}`;
+}
+
+function actionVoiceover(beat) {
+  return `The next action unfolds naturally and keeps the story moving forward. ${beat.voiceover}`;
+}
+
+function consequenceVoiceover(beat) {
+  return `The action creates a clear consequence that leads naturally into the next part of the story.`;
+}
+
+// --------------------------------------------------
+// BUILD TIMELINE
+// --------------------------------------------------
 
 function buildTimeline(story, requiredScenes) {
-  let base =
-    kittenTimeline(story) ||
-    puppyTimeline(story) ||
-    genericTimeline(story);
+  let base;
 
-  /*
-   * Short videos:
-   * use the actual story beats directly.
-   */
+  if (isEthanCabinStory(story)) {
+    base = ethanTimeline();
+  } else {
+    base = genericTimeline(story);
+  }
+
+  // Short video: use meaningful beats directly
   if (requiredScenes <= base.length) {
     return base.slice(0, requiredScenes);
   }
 
-  /*
-   * Long videos:
-   * expand each story beat into multiple cinematic sub-scenes.
-   */
+  // Long video: expand every meaningful beat
   let expanded = [];
 
   for (const beat of base) {
     expanded.push(...expandBeat(beat));
   }
 
-  /*
-   * If still not enough scenes, expand again with
-   * continuity-preserving micro beats.
-   */
-  let pass = 0;
+  // If still not enough scenes, repeat only as continuity scenes
+  let i = 0;
 
-  while (expanded.length < requiredScenes && pass < 10) {
-    const next = [];
+  while (expanded.length < requiredScenes) {
+    const source = base[i % base.length];
 
-    for (const beat of expanded) {
-      next.push(beat);
+    expanded.push({
+      ...source,
+      phase: "continuation",
+      action:
+        `Continue naturally from the previous story moment while preserving the exact characters, location, props and emotional state. ${source.action}`,
+      dialogue:
+        continuationDialogue(source, i),
+      voiceover:
+        `The story continues naturally from the previous moment while preserving continuity.`
+    });
 
-      if (next.length < requiredScenes) {
-        next.push({
-          ...beat,
-          sub: `${beat.sub}_continuation`,
-          action:
-            `The current moment continues naturally before the next story event.`,
-          visual:
-            `${beat.visual} Continue the same continuous moment without changing the characters, location or props.`
-        });
-      }
-    }
-
-    expanded = next;
-    pass++;
+    i++;
   }
 
   return expanded.slice(0, requiredScenes);
 }
 
-/* =========================
-   CHARACTER LOCK
-========================= */
+function continuationDialogue(beat, index) {
+  const lines = [
+    "We have to keep going.",
+    "I can't stop now.",
+    "Something tells me we're close.",
+    "Stay with me.",
+    "We need to keep moving.",
+    "This isn't over yet."
+  ];
 
-function characterLock(storyData) {
-  return [
-    ...storyData.characters,
-    ...storyData.animals
-  ].map(item => ({
-    id: item.id,
-    name: item.name,
-    description: item.description
+  return lines[index % lines.length];
+}
+
+// --------------------------------------------------
+// CHARACTER LOCK
+// --------------------------------------------------
+
+function createCharacterLock(characters) {
+  return characters.map(c => ({
+    role: c.role,
+    locked_description: c.description
   }));
 }
 
-/* =========================
-   DIALOGUE
-========================= */
+// --------------------------------------------------
+// SCENE LOCATION
+// --------------------------------------------------
 
-function dialogueFor(beat) {
-  const text = `${beat.id} ${beat.sub} ${beat.action}`.toLowerCase();
-
-  if (text.includes("rain") || text.includes("storm")) {
-    return "I need to find a safe place.";
-  }
-
-  if (text.includes("kitten") && text.includes("discover")) {
-    return "Wait... there's a kitten here.";
-  }
-
-  if (text.includes("kitten") && text.includes("protect")) {
-    return "Don't worry. I'll keep you safe.";
-  }
-
-  if (text.includes("pick")) {
-    return "Come on, little one.";
-  }
-
-  if (text.includes("home") && text.includes("dry")) {
-    return "Let's get you warm and dry.";
-  }
-
-  if (text.includes("food") || text.includes("feed")) {
-    return "Here, you must be hungry.";
-  }
-
-  if (text.includes("poster") && text.includes("recogn")) {
-    return "That's you. I found your owner.";
-  }
-
-  if (text.includes("owner")) {
-    return "I think we found your family.";
-  }
-
-  if (text.includes("puppy")) {
-    return "Stay with me. I'll help you.";
-  }
-
-  if (text.includes("collar")) {
-    return "Maybe this collar has a clue.";
-  }
-
-  if (text.includes("search")) {
-    return "I'll keep looking.";
-  }
-
-  if (text.includes("reunit")) {
-    return "You're finally home.";
-  }
-
-  return "I know what I need to do.";
+function getSceneLocation(beat) {
+  return beat.location || "story environment";
 }
 
-/* =========================
-   VOICEOVER
-========================= */
+// --------------------------------------------------
+// SCENE VISUAL
+// --------------------------------------------------
 
-function voiceoverFor(beat) {
-  const text = beat.action.toLowerCase();
+function createVisualPrompt(beat, characters, aspectRatio) {
+  const characterText = beat.characters
+    .map(role => {
+      const c = characters.find(x => x.role === role);
+      return c ? c.description : role;
+    })
+    .join("; ");
 
-  if (text.includes("rain") || text.includes("storm")) {
-    return "The weather suddenly changes and forces the story in a new direction.";
-  }
+  const props =
+    beat.props && beat.props.length
+      ? `Important props: ${beat.props.join(", ")}.`
+      : "No unrelated props.";
 
-  if (text.includes("kitten")) {
-    return "A small discovery gives the main character a reason to stop and help.";
-  }
-
-  if (text.includes("poster")) {
-    return "A simple clue opens a possible path toward the truth.";
-  }
-
-  if (text.includes("owner")) {
-    return "The search finally brings the missing pieces together.";
-  }
-
-  if (text.includes("puppy")) {
-    return "The helpless animal now depends on someone willing to help.";
-  }
-
-  return "This moment pushes the story naturally toward what happens next.";
+  return (
+    `Cinematic realistic live-action movie scene. ` +
+    `Location: ${getSceneLocation(beat)}. ` +
+    `Characters: ${characterText}. ` +
+    `${props} ` +
+    `Main action: ${beat.action} ` +
+    `Natural human movement, realistic facial expressions, accurate physics, ` +
+    `cinematic depth, detailed environment, consistent character identity, ` +
+    `same face, same age, same hairstyle, same body proportions and same clothing. ` +
+    `Do not introduce unrelated characters, locations, vehicles or objects. ` +
+    `Aspect ratio ${aspectRatio}.`
+  );
 }
 
-/* =========================
-   CAMERA
-========================= */
+// --------------------------------------------------
+// CAMERA
+// --------------------------------------------------
 
-function cameraFor(index) {
+function cameraFor(index, phase) {
   const cameras = [
     "wide cinematic establishing shot",
     "medium tracking shot",
     "over-the-shoulder shot",
     "slow cinematic push-in",
-    "natural handheld medium shot",
     "emotional close-up",
-    "side tracking shot",
-    "low-angle cinematic shot"
+    "handheld suspense shot"
   ];
+
+  if (phase === "consequence") return "slow cinematic push-in";
+  if (phase === "reaction") return "emotional close-up";
 
   return cameras[index % cameras.length];
 }
 
-/* =========================
-   LIGHTING
-========================= */
+// --------------------------------------------------
+// LIGHTING
+// --------------------------------------------------
 
-function lightingFor(beat) {
-  const text = `${beat.location} ${beat.action}`.toLowerCase();
-
-  if (text.includes("rain") || text.includes("storm")) {
-    return "dramatic overcast storm lighting with realistic wet-surface reflections";
+function lightingFor(location, phase) {
+  if (location === "family house") {
+    return "warm realistic indoor evening lighting";
   }
 
-  if (beat.location === "home") {
-    return "warm soft indoor lighting creating a safe emotional atmosphere";
+  if (location === "abandoned cabin") {
+    return "dim atmospheric interior lighting with natural shadows";
   }
 
-  if (text.includes("reunit") || text.includes("owner")) {
-    return "warm natural golden light emphasizing the emotional moment";
+  if (location === "locked cabin room") {
+    return "dim dramatic interior lighting with soft directional light";
   }
 
-  return "natural cinematic lighting appropriate to the scene and time of day";
+  if (location === "secret tunnel") {
+    return "dark cinematic tunnel lighting with subtle practical light";
+  }
+
+  if (location === "nearby forest") {
+    return "natural forest lighting with cinematic depth and realistic shadows";
+  }
+
+  if (location === "town at sunrise") {
+    return "soft golden sunrise lighting";
+  }
+
+  return "natural cinematic lighting appropriate to the exact scene";
 }
 
-/* =========================
-   SCENE CHARACTERS
-========================= */
+// --------------------------------------------------
+// STORY ELEMENT LOCK
+// --------------------------------------------------
 
-function resolveCharacters(beat, storyData) {
-  const names = [];
-
-  const main = storyData.characters.find(
-    x => x.role === "main_character"
-  );
-
-  if (
-    main &&
-    beat.characters.includes("main_character")
-  ) {
-    names.push(main.name);
-  }
-
-  if (beat.characters.includes("pet_owner")) {
-    const owner = storyData.characters.find(
-      x => x.id === "pet_owner"
-    );
-
-    if (owner) names.push(owner.name);
-  }
-
-  return unique(names);
-}
-
-/* =========================
-   CREATE SCENES
-========================= */
-
-function createScenes(story, duration, aspectRatio) {
-  const seconds = durationToSeconds(duration);
-  const total = sceneCount(seconds);
-
-  const storyData = {
-    characters: parseCharacters(story),
-    animals: parseAnimals(story),
-    locations: parseLocations(story),
-    objects: parseObjects(story),
-    conditions: parseConditions(story)
+function createStoryElementLock(text) {
+  return {
+    locations: parseLocations(text),
+    objects: parseObjects(text),
+    conditions: parseConditions(text),
+    rule:
+      "Only use story elements when they belong to the current scene. Never introduce unrelated props, characters or locations."
   };
+}
 
-  const timeline = buildTimeline(story, total);
+// --------------------------------------------------
+// BUILD PROJECT
+// --------------------------------------------------
+
+function createProject(prompt, duration, aspectRatio) {
+  const story = cleanText(prompt);
+  const seconds = durationToSeconds(duration);
+  const totalScenes = createSceneCount(seconds);
+
+  const characters = parseCharacters(story);
+  const locations = parseLocations(story);
+  const objects = parseObjects(story);
+  const conditions = parseConditions(story);
+
+  const timeline = buildTimeline(story, totalScenes);
 
   const scenes = timeline.map((beat, index) => {
     const start = index * 10;
-    const end = Math.min(start + 10, seconds);
-
-    const characters = resolveCharacters(
-      beat,
-      storyData
-    );
-
-    const animals = (beat.animals || []).map(id => {
-      const animal = storyData.animals.find(
-        x => x.id === id
-      );
-      return animal ? animal.name : id;
-    });
-
-    const objects = beat.objects || [];
-
-    const continuity = [
-      "Keep the exact same character face, age, hairstyle, body proportions and clothing throughout the entire project.",
-      "Keep every animal's appearance identical throughout the project.",
-      `Keep this scene strictly in the ${beat.location} location.`,
-      `Characters: ${characters.join(", ") || "main character"}.`,
-      `Animals: ${animals.join(", ") || "none"}.`,
-      `Props: ${objects.join(", ") || "none"}.`,
-      "Do not introduce unrelated characters, locations, vehicles or props."
-    ].join(" ");
+    const end = start + 10;
 
     return {
       scene_number: index + 1,
-      start_time: start,
-      end_time: end,
-      duration: end - start,
-      phase: beat.sub || "story_beat",
-      location: beat.location,
-      characters,
-      animals,
-      objects,
-      visual_prompt:
-        `${beat.visual} Realistic cinematic detail, natural human movement, accurate environmental physics, consistent character design, aspect ratio ${aspectRatio}.`,
-      camera: cameraFor(index),
-      lighting: lightingFor(beat),
+      start_time: `${start}s`,
+      end_time: `${end}s`,
+
+      visual_prompt: createVisualPrompt(
+        beat,
+        characters,
+        aspectRatio
+      ),
+
+      camera: cameraFor(index, beat.phase),
+
+      lighting: lightingFor(
+        getSceneLocation(beat),
+        beat.phase
+      ),
+
       action: beat.action,
-      dialogue: dialogueFor(beat),
-      voiceover: voiceoverFor(beat),
-      continuity
+
+      dialogue: beat.dialogue,
+
+      voiceover: beat.voiceover,
+
+      continuity:
+        `Continue directly from the previous scene. ` +
+        `Keep character identity locked. ` +
+        `Keep the exact same face, age, hairstyle, body proportions and clothing. ` +
+        `Current location: ${getSceneLocation(beat)}. ` +
+        `Characters in this scene: ${beat.characters.join(", ")}. ` +
+        `Props in this scene: ${
+          beat.props.length ? beat.props.join(", ") : "none"
+        }. ` +
+        `Do not introduce unrelated elements.`
     };
   });
 
   return {
+    success: true,
+    mode: "V12 TRUE STORY TIMELINE DEMO",
     duration: seconds,
-    total_scenes: total,
+    total_scenes: totalScenes,
     aspect_ratio: aspectRatio,
-    story,
-    story_understanding: storyData,
-    master_character_lock: characterLock(storyData),
-    story_element_lock: {
-      locations: storyData.locations,
-      objects: storyData.objects,
-      conditions: storyData.conditions
+
+    story_understanding: {
+      characters,
+      locations,
+      objects,
+      conditions
     },
-    timeline: timeline.map((beat, index) => ({
-      timeline_number: index + 1,
-      phase: beat.sub || "story_beat",
-      location: beat.location,
-      action: beat.action
-    })),
+
+    master_character_lock: createCharacterLock(characters),
+
+    story_element_lock: createStoryElementLock(story),
+
     scenes
   };
 }
 
-/* =========================
-   API TEST
-========================= */
-
-app.get("/api/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "SANAPTAI V11 server is working"
-  });
-});
-
-/* =========================
-   DEMO MODE
-========================= */
+// --------------------------------------------------
+// DEMO PROJECT
+// --------------------------------------------------
 
 app.post("/api/demo-project", (req, res) => {
   try {
     const {
       prompt,
-      duration,
-      aspectRatio
+      duration = 30,
+      aspectRatio = "16:9"
     } = req.body;
 
     if (!prompt || !String(prompt).trim()) {
       return res.status(400).json({
         success: false,
-        error: "Story prompt is required."
+        error: "Prompt is required."
       });
     }
 
-    const result = createScenes(
-      String(prompt).trim(),
-      duration || 30,
-      aspectRatio || "16:9"
+    const project = createProject(
+      prompt,
+      duration,
+      aspectRatio
     );
 
-    res.json({
-      success: true,
-      mode: "demo",
-      ...result
-    });
-
+    res.json(project);
   } catch (error) {
-    console.error("Demo Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -998,109 +995,70 @@ app.post("/api/demo-project", (req, res) => {
   }
 });
 
-/* =========================
-   GEMINI MODE
-========================= */
+// --------------------------------------------------
+// GEMINI AI MODE
+// --------------------------------------------------
 
 app.post("/api/plan-scenes", async (req, res) => {
   try {
     if (!ai) {
       return res.status(503).json({
         success: false,
-        error: "GEMINI_API_KEY is not configured."
+        error:
+          "Gemini AI is not configured. Demo Mode is available."
       });
     }
 
     const {
       prompt,
-      duration,
-      aspectRatio
+      duration = 30,
+      aspectRatio = "16:9"
     } = req.body;
 
-    const total = sceneCount(duration || 30);
+    const seconds = durationToSeconds(duration);
+    const scenes = createSceneCount(seconds);
 
     const instruction = `
-You are SANAPTAI V11.
+You are SANAPTAI's cinematic story planning engine.
 
-Convert the story into exactly ${total} cinematic scenes.
+Create exactly ${scenes} scenes.
 
-STRICT RULES:
-- Every scene is exactly 10 seconds.
-- Chronological order must be preserved.
-- One primary action per scene.
-- Do not invent unrelated events.
-- Do not invent unrelated vehicles or props.
-- Characters must remain visually identical.
-- Locations must be scene-specific.
-- Dialogue must fit inside 10 seconds.
-- Output JSON only.
+Every scene is exactly 10 seconds.
 
-Return:
-{
-  "scenes": [
-    {
-      "scene_number": 1,
-      "start_time": 0,
-      "end_time": 10,
-      "visual_prompt": "",
-      "camera": "",
-      "lighting": "",
-      "action": "",
-      "dialogue": "",
-      "voiceover": "",
-      "continuity": ""
-    }
-  ]
-}
+Aspect ratio: ${aspectRatio}
+
+Story:
+${prompt}
+
+Rules:
+1. Preserve the original story.
+2. Keep events chronological.
+3. Do not invent unrelated events.
+4. Keep character identity consistent.
+5. Every scene must contain one meaningful action.
+6. Dialogue must be short enough for a 10-second scene.
+7. Voiceover must describe the actual story moment.
+8. Do not repeat the same dialogue.
+9. Do not repeat generic voiceover.
+10. Maintain location and prop continuity.
+11. Return JSON only.
 `;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
-      contents:
-        instruction +
-        "\n\nSTORY:\n" +
-        prompt +
-        "\n\nASPECT RATIO:\n" +
-        (aspectRatio || "16:9")
+      contents: instruction
     });
-
-    const raw =
-      response.text ||
-      response.candidates?.[0]?.content?.parts
-        ?.map(p => p.text || "")
-        .join("") ||
-      "";
-
-    let parsed;
-
-    try {
-      parsed = JSON.parse(
-        raw
-          .replace(/^```json/i, "")
-          .replace(/^```/i, "")
-          .replace(/^```/, "")
-          .replace(/```$/, "")
-          .trim()
-      );
-    } catch {
-      return res.status(500).json({
-        success: false,
-        error: "Gemini returned invalid JSON.",
-        raw
-      });
-    }
 
     res.json({
       success: true,
-      mode: "ai",
-      duration: durationToSeconds(duration || 30),
-      total_scenes: total,
-      aspect_ratio: aspectRatio || "16:9",
-      scenes: parsed.scenes || []
+      mode: "GEMINI AI",
+      duration: seconds,
+      total_scenes: scenes,
+      aspect_ratio: aspectRatio,
+      ai_response: response.text
     });
-
   } catch (error) {
-    console.error("Gemini Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -1109,16 +1067,16 @@ Return:
   }
 });
 
-/* =========================
-   CREATE PROJECT
-========================= */
+// --------------------------------------------------
+// CREATE PROJECT
+// --------------------------------------------------
 
 app.post("/api/create-project", (req, res) => {
   try {
     const {
       prompt,
-      duration,
-      aspectRatio
+      duration = 30,
+      aspectRatio = "16:9"
     } = req.body;
 
     if (!prompt) {
@@ -1128,20 +1086,14 @@ app.post("/api/create-project", (req, res) => {
       });
     }
 
-    const result = createScenes(
-      prompt,
-      duration || 30,
-      aspectRatio || "16:9"
+    res.json(
+      createProject(
+        prompt,
+        duration,
+        aspectRatio
+      )
     );
-
-    res.json({
-      success: true,
-      project: result
-    });
-
   } catch (error) {
-    console.error("Create Project Error:", error);
-
     res.status(500).json({
       success: false,
       error: error.message
@@ -1149,18 +1101,29 @@ app.post("/api/create-project", (req, res) => {
   }
 });
 
-/* =========================
-   ROOT
-========================= */
+// --------------------------------------------------
+// TEST
+// --------------------------------------------------
 
-app.get("/", (req, res) => {
-  res.send("SANAPTAI V11 is running.");
+app.get("/api/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "SANAPTAI V12 True Story Timeline Engine is working."
+  });
 });
 
-/* =========================
-   START
-========================= */
+// --------------------------------------------------
+// ROOT
+// --------------------------------------------------
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`SANAPTAI V11 running on port ${PORT}`);
+app.get("/", (req, res) => {
+  res.send("SANAPTAI V12 True Story Timeline Engine is running.");
+});
+
+// --------------------------------------------------
+// SERVER
+// --------------------------------------------------
+
+app.listen(PORT, () => {
+  console.log(`SANAPTAI V12 running on port ${PORT}`);
 });
