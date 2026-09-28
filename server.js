@@ -175,7 +175,7 @@ JSON FORMAT:
   "character_locks": [
     {
       "name": "Character name",
-      "description": "Permanent detailed physical appearance and clothing description"
+      "description": "Permanent detailed physical appearance, clothing, accessories, and distinguishing features"
     }
   ],
   "scenes": [
@@ -184,9 +184,13 @@ JSON FORMAT:
       "start": 0,
       "end": 10,
       "duration": 10,
-      "prompt": "Detailed cinematic video prompt including character consistency",
+      "visual_prompt": "Detailed cinematic visual description with character consistency",
+      "camera": "Camera shot and camera movement",
+      "lighting": "Lighting style and mood",
+      "action": "What the character does during this 10-second scene",
       "dialogue": "Short dialogue or empty string",
-      "voiceover": "Short voiceover or empty string"
+      "voiceover": "Short voiceover or empty string",
+      "continuity": "How this scene connects to the previous and next scene"
     }
   ]
 }`
