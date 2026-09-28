@@ -230,13 +230,25 @@ data.project.scenes.forEach((scene) => {
     " (" + scene.start + "-" + scene.end + " sec)\n\n" +
 
     "🎥 Visual Prompt:\n" +
-    scene.visual_prompt + "\n\n" +
+scene.visual_prompt + "\n\n" +
 
-    "🗣️ Dialogue:\n" +
-    (scene.dialogue || "No dialogue") + "\n\n" +
+"📷 Camera:\n" +
+(scene.camera || "No camera direction") + "\n\n" +
 
-    "🎙️ Voiceover:\n" +
-    (scene.voiceover || "No voiceover") + "\n\n" +
+"💡 Lighting:\n" +
+(scene.lighting || "No lighting direction") + "\n\n" +
+
+"🎬 Action:\n" +
+(scene.action || "No action description") + "\n\n" +
+
+"🗣️ Dialogue:\n" +
+(scene.dialogue || "No dialogue") + "\n\n" +
+
+"🎙️ Voiceover:\n" +
+(scene.voiceover || "No voiceover") + "\n\n" +
+
+"🔗 Continuity:\n" +
+(scene.continuity || "No continuity information") + "\n\n" +
 
     "-------------------------\n\n";
 });
