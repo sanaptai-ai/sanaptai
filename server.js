@@ -22,9 +22,9 @@ app.get("/api/test", (req, res) => {
 
 
 /* =========================================================
-   SMART DEMO MODE V3
-   Dynamic story-based 10-second scene planner
-   No Gemini API required
+   SMART DEMO MODE V4
+   Dynamic story-aware scene planner
+   No Gemini required
 ========================================================= */
 
 app.post("/api/demo-project", (req, res) => {
@@ -37,128 +37,214 @@ app.post("/api/demo-project", (req, res) => {
         });
     }
 
+    const story = prompt.trim();
     const totalSeconds = Number(duration) || 10;
     const totalScenes = Math.ceil(totalSeconds / 10);
-
     const ratio = aspectRatio || "16:9";
 
-    /*
-      Basic character lock.
-      This will remain identical throughout the project.
-    */
+    /* =====================================================
+       STORY UNDERSTANDING
+    ===================================================== */
+
+    const lowerStory = story.toLowerCase();
+
+    let characterType = "main character";
+
+    if (
+        lowerStory.includes("young boy") ||
+        lowerStory.includes("little boy") ||
+        lowerStory.includes("boy")
+    ) {
+        characterType = "young boy";
+    } else if (
+        lowerStory.includes("young girl") ||
+        lowerStory.includes("little girl") ||
+        lowerStory.includes("girl")
+    ) {
+        characterType = "young girl";
+    } else if (
+        lowerStory.includes("woman") ||
+        lowerStory.includes("girl")
+    ) {
+        characterType = "young woman";
+    } else if (
+        lowerStory.includes("man") ||
+        lowerStory.includes("boy")
+    ) {
+        characterType = "young man";
+    }
+
+
+    /* =====================================================
+       CHARACTER LOCK
+    ===================================================== */
 
     const characterLock = {
         name: "Main Character",
         description:
-            "Young adult man, 25 years old, athletic build, medium skin tone, " +
-            "short dark-brown hair, brown eyes, light stubble, wearing a dark jacket, " +
-            "black shirt, dark jeans and black boots. " +
-            "Exact same face, age, hairstyle, skin tone, body proportions, clothing, " +
-            "accessories and physical appearance in every scene."
+            `${characterType}, with a natural realistic appearance appropriate to the story. ` +
+            `Maintain the exact same face, age, hairstyle, skin tone, eye color, ` +
+            `body proportions, clothing, footwear and accessories in every scene. ` +
+            `Never randomly change the character's appearance between scenes.`
     };
 
 
-    /*
-      Convert the user's story into a simple story structure.
-      The system creates different beats based on the user's prompt.
-    */
+    /* =====================================================
+       STORY-SPECIFIC VISUAL ELEMENTS
+    ===================================================== */
+
+    let storyElements =
+        "Use the important people, animals, objects, locations and events explicitly mentioned in the user's story.";
+
+    if (
+        lowerStory.includes("puppy") ||
+        lowerStory.includes("dog")
+    ) {
+        storyElements +=
+            " Include the same puppy throughout the story whenever the puppy is present. " +
+            "Keep its breed, fur color, size, collar and appearance consistent.";
+    }
+
+    if (
+        lowerStory.includes("city") ||
+        lowerStory.includes("street")
+    ) {
+        storyElements +=
+            " Maintain the same city environment and logical street geography between connected scenes.";
+    }
+
+    if (
+        lowerStory.includes("owner") ||
+        lowerStory.includes("mother") ||
+        lowerStory.includes("father") ||
+        lowerStory.includes("friend")
+    ) {
+        storyElements +=
+            " Keep all important supporting characters visually consistent whenever they appear.";
+    }
+
+
+    /* =====================================================
+       DYNAMIC STORY BEATS
+    ===================================================== */
 
     const storyBeats = [
 
         {
-            purpose: "Opening",
+            purpose: "Introduction",
+            visual:
+                `Show the beginning of the user's story: ${story}. Establish the main character, important location and the main situation.`,
             action:
-                "The main character enters the situation described in the user's story and notices something important happening.",
+                "The main character naturally enters or experiences the opening situation described by the user.",
             dialogue:
-                "Something is not right.",
+                "What's going on here?",
             voiceover:
-                "Everything seemed normal until something unexpected changed the course of the story."
+                "It all began with an unexpected moment."
         },
 
         {
             purpose: "Discovery",
+            visual:
+                `Focus on the main character discovering the important person, animal, object or event described in: ${story}.`,
             action:
-                "The main character carefully investigates the important person, object, place or event described in the story.",
+                "The main character notices, approaches or investigates the important story element.",
             dialogue:
-                "I need to find out what's happening.",
+                "I need to take a closer look.",
             voiceover:
-                "Curiosity pushes him closer to the mystery."
+                "Something about the situation made him stop and investigate."
         },
 
         {
-            purpose: "Problem",
+            purpose: "First problem",
+            visual:
+                `Show the first real obstacle or problem naturally created by the events in: ${story}.`,
             action:
-                "A major problem or obstacle connected to the user's story suddenly appears.",
+                "The main character reacts to the problem and tries to understand what to do next.",
             dialogue:
-                "This is getting serious.",
+                "How am I going to fix this?",
             voiceover:
-                "But the situation quickly becomes more dangerous than expected."
+                "The simple situation suddenly became a real challenge."
         },
 
         {
-            purpose: "Decision",
+            purpose: "Attempt",
+            visual:
+                `Show the main character making the first serious attempt to solve the problem in the user's story: ${story}.`,
             action:
-                "The main character realizes that he must make an important decision and prepares to act.",
+                "The main character takes a practical action that directly advances the story.",
             dialogue:
-                "I can't walk away now.",
+                "There has to be a way.",
             voiceover:
-                "There was only one choice left: face the problem."
-        },
-
-        {
-            purpose: "Action",
-            action:
-                "The main character actively responds to the problem and moves the story forward.",
-            dialogue:
-                "Let's do this.",
-            voiceover:
-                "With determination, he finally takes action."
+                "Instead of giving up, he decided to do something about it."
         },
 
         {
             purpose: "Complication",
+            visual:
+                `Introduce a believable complication directly connected to the user's story: ${story}.`,
             action:
-                "An unexpected complication changes the situation and creates a new challenge.",
+                "An unexpected development interrupts the character's plan.",
             dialogue:
-                "I didn't see that coming.",
+                "That wasn't supposed to happen.",
             voiceover:
-                "Just when everything seemed under control, another surprise appeared."
+                "But the situation had one more surprise waiting."
+        },
+
+        {
+            purpose: "Search",
+            visual:
+                `Show the main character actively searching, investigating or moving toward the solution described by the user's story.`,
+            action:
+                "The character follows clues, searches the environment or contacts the relevant person.",
+            dialogue:
+                "I'm getting closer.",
+            voiceover:
+                "Piece by piece, the answer began to come into view."
         },
 
         {
             purpose: "Climax",
+            visual:
+                `Show the most important confrontation, discovery or emotional moment naturally arising from: ${story}.`,
             action:
-                "The main character confronts the central challenge of the story with determination.",
+                "The main character takes decisive action during the central moment of the story.",
             dialogue:
-                "This ends now.",
+                "This is it.",
             voiceover:
-                "The moment of truth had finally arrived."
+                "Everything came down to this one decisive moment."
         },
 
         {
             purpose: "Resolution",
+            visual:
+                `Show the main problem of the user's story being resolved in a believable and emotionally satisfying way.`,
             action:
-                "The main character overcomes or understands the central problem and looks toward the future.",
+                "The main character completes the action that resolves the central problem.",
             dialogue:
-                "It's finally over.",
+                "We finally made it.",
             voiceover:
-                "The danger passed, but the experience changed him forever."
+                "After everything that happened, the problem was finally solved."
         },
 
         {
             purpose: "Ending",
+            visual:
+                `Create a cinematic ending that naturally follows the resolution of the user's story: ${story}.`,
             action:
-                "The main character looks toward the next stage of his journey as the story reaches a cinematic ending.",
+                "The main character looks toward the future as the story reaches its conclusion.",
             dialogue:
-                "This is only the beginning.",
+                "I'll never forget this.",
             voiceover:
-                "And with that, a new chapter was about to begin."
+                "What started as an ordinary moment became a memory he would never forget."
         }
     ];
 
 
-    const scenes = [];
+    /* =====================================================
+       CREATE SCENES
+    ===================================================== */
 
+    const scenes = [];
 
     for (let i = 1; i <= totalScenes; i++) {
 
@@ -167,18 +253,14 @@ app.post("/api/demo-project", (req, res) => {
 
         const beat = storyBeats[beatIndex];
 
-
-        /*
-          For projects longer than 9 scenes,
-          continue the final story phase without
-          breaking the 10-second scene structure.
-        */
-
-        const scenePurpose =
-            totalScenes > storyBeats.length && i > storyBeats.length
-                ? "Continuation"
-                : beat.purpose;
-
+        const continuation =
+            i === 1
+                ? "Opening scene. Establish all important characters, objects and location."
+                : `Continue directly from Scene ${i - 1}. ` +
+                  `Preserve exact character appearance, supporting-character appearance, ` +
+                  `animal appearance, props, location, weather, lighting, time of day, ` +
+                  `camera geography, emotional state and physical positions. ` +
+                  `The new scene must begin logically from the previous scene's ending.`;
 
         scenes.push({
 
@@ -190,33 +272,33 @@ app.post("/api/demo-project", (req, res) => {
 
             duration: 10,
 
-
             visual_prompt:
                 `${characterLock.description} ` +
-                `USER STORY: "${prompt.trim()}". ` +
-                `SCENE ${i} PURPOSE: ${scenePurpose}. ` +
-                `Create a cinematic visual scene that directly represents the user's story. ` +
-                `${beat.action} ` +
-                `Do not introduce unrelated characters, locations or objects unless required by the user's story. ` +
-                `Maintain realistic human movement, realistic physics, believable facial expressions, ` +
-                `detailed environment, cinematic composition, high detail, realistic movie quality. ` +
+                `USER STORY: "${story}". ` +
+                `SCENE PURPOSE: ${beat.purpose}. ` +
+                `${beat.visual} ` +
+                `${storyElements} ` +
+                `Do not replace the user's characters with unrelated characters. ` +
+                `Do not change the central story. ` +
+                `Create realistic cinematic visuals, natural movement, believable physics, ` +
+                `detailed environments, realistic facial expressions and movie-quality composition. ` +
                 `Aspect ratio: ${ratio}. ` +
-                `The scene must naturally continue from the previous scene.`,
+                `Every visual element must support the user's story.`,
 
             camera:
                 i === 1
-                    ? "Wide cinematic establishing shot followed by a smooth camera movement toward the main character."
+                    ? "Wide cinematic establishing shot that clearly introduces the story location, followed by a smooth move toward the main character."
                     : i % 4 === 0
-                        ? "Smooth cinematic tracking shot following the character's movement."
+                        ? "Smooth cinematic tracking shot following the character and important story action."
                         : i % 3 === 0
                             ? "Medium close-up with a slow cinematic push toward the character's emotional reaction."
-                            : "Cinematic over-the-shoulder shot followed by smooth forward camera movement.",
+                            : "Cinematic over-the-shoulder shot followed by a natural forward camera movement.",
 
             lighting:
-                "Maintain consistent cinematic lighting, color mood, environment, weather and time of day throughout the story.",
+                "Maintain consistent cinematic lighting, color mood, weather, shadows, environment and time of day across connected scenes.",
 
             action:
-                `${beat.action} Complete the entire action naturally within exactly 10 seconds.`,
+                `${beat.action} Complete the action naturally within exactly 10 seconds.`,
 
             dialogue:
                 beat.dialogue,
@@ -225,22 +307,24 @@ app.post("/api/demo-project", (req, res) => {
                 beat.voiceover,
 
             continuity:
-                i === 1
-                    ? "Opening scene establishes the main character, location, story situation and important visual elements."
-                    : `Continue directly from Scene ${i - 1}. Keep the exact same face, age, hairstyle, skin tone, body proportions, clothing, accessories, location, props, lighting, weather, time of day and emotional state. Begin from the previous scene's ending position and continue the story naturally.`
+                continuation
         });
     }
 
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
 
     res.json({
 
         status: "success",
 
-        message: "Smart Demo V3 project created successfully",
+        message: "Smart Demo V4 project created successfully",
 
         project: {
 
-            prompt: prompt.trim(),
+            prompt: story,
 
             duration: totalSeconds,
 
@@ -260,7 +344,7 @@ app.post("/api/demo-project", (req, res) => {
 
 /* =========================================================
    AI SCENE PLANNER
-   Uses Gemini when quota is available
+   Gemini version kept for future use
 ========================================================= */
 
 app.post("/api/plan-scenes", async (req, res) => {
@@ -293,62 +377,30 @@ You are SANAPTAI, an advanced AI video story and scene planner.
 
 Create a complete cinematic video plan from the user's story idea.
 
-IMPORTANT RULES:
+Rules:
 
-1. Every scene must be EXACTLY 10 seconds.
+1. Every scene is exactly 10 seconds.
 2. Total scenes must equal duration divided by 10.
-3. Maintain perfect character consistency.
-4. Create permanent character locks.
-5. Same face, age, skin tone, hairstyle, eye color, body proportions,
-   clothing and accessories in every scene.
-6. Maintain location continuity.
-7. Maintain time-of-day continuity.
-8. Maintain weather continuity.
-9. Maintain lighting continuity.
-10. Maintain props and object continuity.
-11. Maintain character position and emotional continuity.
-12. Each scene must continue directly from the previous scene.
-13. Do not repeat the same story beat.
-14. Do not repeat dialogue unnecessarily.
-15. Dialogue must be short enough to speak naturally within 10 seconds.
-16. Voiceover must also fit naturally inside 10 seconds.
-17. Visual prompts must be detailed and suitable for AI video generation.
-18. Include camera movement.
-19. Include lighting.
-20. Include physical action.
-21. Make the story cinematic, logical and engaging.
-22. The visual story must be based on the USER STORY, not a fixed example.
+3. Use the user's actual characters and story.
+4. Do not replace the user's characters with generic characters.
+5. Maintain permanent character locks.
+6. Maintain location and prop continuity.
+7. Do not repeat story beats unnecessarily.
+8. Dialogue and voiceover must fit naturally inside 10 seconds.
+9. Include detailed visual prompts.
+10. Include camera, lighting, action and continuity.
 
 Return ONLY valid JSON.
 
-Required JSON structure:
+Required structure:
 
 {
   "duration": number,
   "sceneDuration": 10,
   "totalScenes": number,
   "aspectRatio": "9:16 or 16:9 or 1:1",
-  "characterLocks": [
-    {
-      "name": "Character name",
-      "description": "Permanent detailed character appearance lock"
-    }
-  ],
-  "scenes": [
-    {
-      "scene": 1,
-      "start": 0,
-      "end": 10,
-      "duration": 10,
-      "visual_prompt": "Detailed visual prompt",
-      "camera": "Camera movement",
-      "lighting": "Lighting description",
-      "action": "Action description",
-      "dialogue": "Short spoken dialogue",
-      "voiceover": "Short voiceover",
-      "continuity": "Continuity instructions"
-    }
-  ]
+  "characterLocks": [],
+  "scenes": []
 }
 
 Requested duration: ${totalSeconds} seconds.
@@ -373,9 +425,7 @@ ${prompt}
         let project;
 
         try {
-
             project = JSON.parse(text);
-
         } catch (parseError) {
 
             return res.status(500).json({
@@ -385,13 +435,9 @@ ${prompt}
         }
 
         res.json({
-
             status: "success",
-
             message: "AI scene plan created successfully",
-
-            project: project
-
+            project
         });
 
     } catch (error) {
@@ -402,23 +448,16 @@ ${prompt}
             error?.status === 429 ||
             error?.code === 429
         ) {
-
             return res.status(429).json({
-
                 error: "Gemini quota exceeded",
-
                 message:
                     "Gemini free-tier limit reached. Please wait and try again later."
-
             });
         }
 
         res.status(500).json({
-
             error: "AI scene planning failed",
-
             message: error?.message || "Unknown Gemini error"
-
         });
     }
 });
@@ -448,15 +487,10 @@ app.post("/api/create-project", (req, res) => {
         message: "Project created successfully",
 
         project: {
-
             prompt,
-
             duration: totalSeconds,
-
             sceneDuration: 10,
-
             totalScenes,
-
             aspectRatio: aspectRatio || "16:9"
         }
     });
