@@ -21,9 +21,9 @@ app.get("/api/test", (req, res) => {
 });
 
 
-/* =========================================================
-   SMART DEMO MODE
-   Works without Gemini
+    /* =========================================================
+   SMART DEMO MODE V2
+   Story-specific 10-second scene planner
 ========================================================= */
 
 app.post("/api/demo-project", (req, res) => {
@@ -44,53 +44,132 @@ app.post("/api/demo-project", (req, res) => {
         description:
             "Young adult man, 25 years old, athletic build, medium skin tone, " +
             "short dark-brown hair, brown eyes, light stubble, wearing a dark jacket, " +
-            "black shirt, dark jeans and black boots. Exact same face, age, hairstyle, " +
-            "clothing, body proportions and accessories in every scene."
+            "black shirt, dark jeans and black boots. " +
+            "Exact same face, age, hairstyle, skin tone, body proportions, clothing " +
+            "and accessories in every scene."
     };
 
     const storyBeats = [
-        "The character enters the environment and notices the first unusual clue.",
-        "The character carefully approaches the discovery and studies it.",
-        "The character realizes that the discovery is connected to something much bigger.",
-        "The character tests the mysterious object or situation and observes an unexpected reaction.",
-        "The character faces a new obstacle that prevents an easy solution.",
-        "The character finds an important clue and understands what must be done next.",
-        "The character takes a risky but deliberate step toward solving the mystery.",
-        "The character reaches a major turning point and discovers a hidden truth.",
-        "The character confronts the immediate danger and acts quickly.",
-        "The character overcomes the obstacle and sees the consequences of the decision.",
-        "The character reaches the final discovery and understands its meaning.",
-        "The character completes the immediate objective and looks toward what comes next."
-    ];
-
-    const dialogues = [
-        "What is that?",
-        "I've never seen anything like this.",
-        "This can't be here by accident.",
-        "Something is responding to me.",
-        "Wait... what just happened?",
-        "Now I understand.",
-        "There's only one way to find out.",
-        "This changes everything.",
-        "I have to keep going.",
-        "It's finally working.",
-        "So this was the secret.",
-        "Whatever comes next, I'm ready."
-    ];
-
-    const voiceovers = [
-        "In a city filled with advanced technology, one discovery made no sense.",
-        "The closer he got, the stranger the mystery became.",
-        "What looked impossible was beginning to reveal a hidden purpose.",
-        "Then the discovery suddenly reacted to his presence.",
-        "For the first time, he realized he might be in danger.",
-        "A single clue gave him a reason to continue.",
-        "He knew the next step could change everything.",
-        "The truth was far bigger than he had imagined.",
-        "There was no turning back now.",
-        "The mystery was finally beginning to make sense.",
-        "At last, the hidden purpose became clear.",
-        "And this was only the beginning."
+        {
+            visual:
+                "The character walks through a futuristic city at night and suddenly notices a mysterious glowing door standing between two modern buildings.",
+            action:
+                "He stops walking, turns toward the glowing door and cautiously takes a few steps closer.",
+            dialogue:
+                "What is that door doing here?",
+            voiceover:
+                "Among the lights of the futuristic city, one impossible door caught his attention."
+        },
+        {
+            visual:
+                "The character reaches the mysterious glowing door and carefully examines its strange symbols and pulsing blue light.",
+            action:
+                "He slowly raises his hand toward the symbols while watching the glowing surface react to his movement.",
+            dialogue:
+                "It's reacting to me.",
+            voiceover:
+                "The closer he got, the brighter the mysterious symbols became."
+        },
+        {
+            visual:
+                "The glowing door suddenly activates and opens into a brilliant mysterious world filled with floating lights and unknown structures.",
+            action:
+                "The character steps back in shock as the door opens, then looks through the opening with determination.",
+            dialogue:
+                "This changes everything.",
+            voiceover:
+                "Behind the door was a world he had never imagined."
+        },
+        {
+            visual:
+                "The character stands at the entrance and sees a vast futuristic landscape beyond the doorway.",
+            action:
+                "He slowly steps through the doorway while keeping his eyes fixed on the mysterious landscape ahead.",
+            dialogue:
+                "I have to know what's inside.",
+            voiceover:
+                "Curiosity becomes stronger than fear as he crosses the impossible threshold."
+        },
+        {
+            visual:
+                "Inside the mysterious world, the character discovers a massive glowing structure surrounded by floating energy.",
+            action:
+                "He approaches the structure and notices that its lights begin responding to his presence.",
+            dialogue:
+                "It knows I'm here.",
+            voiceover:
+                "The strange world seemed to recognize him."
+        },
+        {
+            visual:
+                "A hidden symbol appears above the glowing structure, revealing a connection between the character and the mysterious world.",
+            action:
+                "He looks upward in disbelief as the symbol slowly forms above him.",
+            dialogue:
+                "Why is my symbol here?",
+            voiceover:
+                "Then he discovered the first clue about why he had been brought here."
+        },
+        {
+            visual:
+                "The mysterious environment suddenly becomes darker as distant mechanical sounds echo through the landscape.",
+            action:
+                "The character turns around quickly and prepares himself as an unknown presence approaches.",
+            dialogue:
+                "Someone else is here.",
+            voiceover:
+                "But the discovery came with a warning."
+        },
+        {
+            visual:
+                "A huge shadow moves across the futuristic landscape while the character searches for its source.",
+            action:
+                "He moves behind a glowing structure and carefully watches the approaching shadow.",
+            dialogue:
+                "I need to stay hidden.",
+            voiceover:
+                "Something powerful was moving toward him."
+        },
+        {
+            visual:
+                "The character discovers an ancient control panel glowing with the same symbol from the doorway.",
+            action:
+                "He reaches toward the control panel and activates it, causing the entire environment to illuminate.",
+            dialogue:
+                "This must be the answer.",
+            voiceover:
+                "The final clue was closer than he realized."
+        },
+        {
+            visual:
+                "The entire mysterious world begins transforming as the control system activates.",
+            action:
+                "The character stands firmly as waves of light move through the landscape around him.",
+            dialogue:
+                "What's happening?",
+            voiceover:
+                "The world was responding to his decision."
+        },
+        {
+            visual:
+                "The glowing doorway reappears in the distance, now surrounded by powerful energy.",
+            action:
+                "The character walks toward the doorway while looking back at the mysterious world one final time.",
+            dialogue:
+                "I know where I need to go.",
+            voiceover:
+                "The mystery had finally revealed its next destination."
+        },
+        {
+            visual:
+                "The character returns toward the glowing doorway and looks ahead with determination as the futuristic city becomes visible beyond it.",
+            action:
+                "He steps through the doorway and walks forward into the city as the mysterious portal closes behind him.",
+            dialogue:
+                "This is only the beginning.",
+            voiceover:
+                "He returned with answers, but a much bigger journey had just begun."
+        }
     ];
 
     const scenes = [];
@@ -98,20 +177,7 @@ app.post("/api/demo-project", (req, res) => {
     for (let i = 1; i <= totalScenes; i++) {
 
         const index = (i - 1) % storyBeats.length;
-
         const beat = storyBeats[index];
-
-        let dialogue = "";
-        let voiceover = "";
-
-        if (i === 1) {
-            dialogue = dialogues[0];
-            voiceover = voiceovers[0];
-        } else if (i % 3 === 0) {
-            dialogue = dialogues[index];
-        } else if (i % 2 === 0) {
-            voiceover = voiceovers[index];
-        }
 
         scenes.push({
 
@@ -126,33 +192,37 @@ app.post("/api/demo-project", (req, res) => {
             visual_prompt:
                 `${characterLock.description} ` +
                 `Story concept: "${prompt}". ` +
-                `Scene ${i}: ${beat} ` +
-                `Show a detailed cinematic environment directly connected to the previous scene. ` +
-                `Use realistic human movement, natural body proportions and believable physical interaction. ` +
-                `Keep the same character identity, clothing, props, location and visual style. ` +
-                `The scene must feel like one continuous movie rather than a separate clip.`,
+                `Scene ${i}: ${beat.visual} ` +
+                `Cinematic realistic environment, detailed futuristic production design, ` +
+                `natural human movement, realistic physics, believable facial expressions, ` +
+                `high detail, cinematic movie quality. ` +
+                `The visual content must directly match the user's story concept.`,
 
             camera:
                 i === 1
-                    ? "Wide establishing shot, then a slow cinematic push-in toward the character."
-                    : i % 3 === 0
-                        ? "Medium close-up with a slow push-in to capture the character's reaction."
-                        : "Smooth cinematic tracking shot following the character's movement.",
+                    ? "Wide cinematic establishing shot of the futuristic city, followed by a slow push-in toward the character and glowing door."
+                    : i % 4 === 0
+                        ? "Smooth tracking shot following the character through the environment."
+                        : i % 3 === 0
+                            ? "Medium close-up slowly pushing toward the character's emotional reaction."
+                            : "Cinematic over-the-shoulder shot transitioning into a smooth forward camera movement.",
 
             lighting:
-                "Consistent cinematic lighting matching the same location, time of day and emotional mood as the previous scene.",
+                "Maintain consistent cinematic lighting, color mood, time of day and environmental illumination across the entire story.",
 
             action:
-                `${beat} The action must begin from the previous scene's ending state and be completed naturally within 10 seconds.`,
+                `${beat.action} Complete the action naturally within exactly 10 seconds.`,
 
-            dialogue: dialogue,
+            dialogue:
+                beat.dialogue,
 
-            voiceover: voiceover,
+            voiceover:
+                beat.voiceover,
 
             continuity:
                 i === 1
-                    ? "Opening scene establishes the main character, environment and initial mystery."
-                    : `Continue directly from Scene ${i - 1}. Preserve the exact same character appearance, clothing, location, props, lighting, time of day and emotional state.`
+                    ? "Opening scene establishes the exact character, futuristic city, glowing door and initial mystery."
+                    : `Continue directly from Scene ${i - 1}. Keep the exact same face, age, hairstyle, skin tone, body proportions, clothing, accessories, location logic, props, lighting, time of day and emotional state. The new scene must begin from the previous scene's ending position.`
         });
     }
 
@@ -160,7 +230,7 @@ app.post("/api/demo-project", (req, res) => {
 
         status: "success",
 
-        message: "Smart demo project created successfully",
+        message: "Smart Demo V2 project created successfully",
 
         project: {
 
@@ -176,7 +246,6 @@ app.post("/api/demo-project", (req, res) => {
         }
     });
 });
-
 
 /* =========================================================
    AI SCENE PLANNER
