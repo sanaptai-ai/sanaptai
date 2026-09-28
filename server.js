@@ -117,17 +117,21 @@ IMPORTANT CHARACTER CONSISTENCY RULES:
 - character position
 - story events
 
-VIDEO RULES:
+DIALOGUE AND VOICEOVER RULES:
 
-- Exactly ${totalScenes} scenes.
 - Every scene is exactly 10 seconds.
-- Every scene must continue naturally from the previous scene.
-- Create detailed cinematic video-generation prompts.
-- Dialogue must fit naturally inside 10 seconds.
-- Use voiceover when narration is needed.
-- Avoid repetitive dialogue.
-- Do not skip important story events.
-- Keep the same characters consistent throughout the entire video.
+- Dialogue must be short enough to be spoken naturally within the same 10-second scene.
+- Maximum dialogue length: approximately 18 words per scene.
+- Do not force dialogue into every scene.
+- Use dialogue only when the character is actually speaking.
+- If the character is silent, use an empty string for dialogue.
+- Voiceover should be used only when narration is needed.
+- Voiceover must also fit naturally within 10 seconds.
+- Never repeat the same dialogue across scenes.
+- Dialogue must match the character's emotion and current action.
+- Dialogue must logically continue the story.
+- Do not put dialogue inside the visual prompt.
+- Keep dialogue and voiceover in separate JSON fields.
 
 Return ONLY valid JSON.
 
