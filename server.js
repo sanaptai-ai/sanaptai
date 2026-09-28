@@ -16,15 +16,15 @@ app.use(express.static("public"));
 app.get("/api/test", (req, res) => {
     res.json({
         status: "success",
-        message: "SANAPTAI server is working"
+        message: "SANAPTAI V6 server is working"
     });
 });
 
 
 /* =========================================================
-   STORY BREAKDOWN ENGINE V5
+   V6 MASTER CHARACTER LOCK
    Rule-based demo engine
-   No Gemini required
+   Gemini is NOT used here
 ========================================================= */
 
 app.post("/api/demo-project", (req, res) => {
@@ -46,7 +46,7 @@ app.post("/api/demo-project", (req, res) => {
 
 
     /* =====================================================
-       STORY ELEMENT DETECTION
+       CHARACTER TYPE
     ===================================================== */
 
     let characterType = "young adult main character";
@@ -72,169 +72,143 @@ app.post("/api/demo-project", (req, res) => {
     }
 
 
-    let importantElements = [];
-
-    if (lowerStory.includes("puppy") || lowerStory.includes("dog")) {
-        importantElements.push(
-            "the same puppy/dog with consistent breed, fur color, size and collar"
-        );
-    }
-
-    if (lowerStory.includes("cat")) {
-        importantElements.push(
-            "the same cat with consistent fur color, size and appearance"
-        );
-    }
-
-    if (lowerStory.includes("car")) {
-        importantElements.push(
-            "the same car with consistent make, color and visible details"
-        );
-    }
-
-    if (lowerStory.includes("house")) {
-        importantElements.push(
-            "the same house and surrounding environment"
-        );
-    }
-
-    if (lowerStory.includes("city")) {
-        importantElements.push(
-            "the same city environment and logical street geography"
-        );
-    }
-
-    if (lowerStory.includes("forest")) {
-        importantElements.push(
-            "the same forest environment and recognizable landmarks"
-        );
-    }
-
-    if (lowerStory.includes("school")) {
-        importantElements.push(
-            "the same school environment and recognizable locations"
-        );
-    }
-
-    if (lowerStory.includes("owner")) {
-        importantElements.push(
-            "the owner as a consistent supporting character when discovered"
-        );
-    }
-
-    if (importantElements.length === 0) {
-        importantElements.push(
-            "all important characters, objects and locations explicitly mentioned in the user's story"
-        );
-    }
-
-
     /* =====================================================
-       CHARACTER LOCK
+       MASTER CHARACTER LOCK
     ===================================================== */
 
-    const characterLock = {
-        name: "Main Character",
-        description:
-            `${characterType}. ` +
-            `Create a realistic appearance appropriate to the user's story. ` +
-            `Maintain the exact same face, age, hairstyle, skin tone, eye color, ` +
-            `body proportions, clothing, footwear and accessories in every scene. ` +
-            `Never randomly change the character's appearance.`
-    };
+    let characterDescription;
+
+    if (characterType === "young boy") {
+
+        characterDescription =
+            "12-year-old boy, warm natural skin tone, round youthful face, " +
+            "dark brown eyes, short slightly messy black hair, slim child body, " +
+            "wearing a clean sky-blue T-shirt, dark blue jeans and white sneakers";
+
+    } else if (characterType === "young girl") {
+
+        characterDescription =
+            "12-year-old girl, natural skin tone, youthful round face, " +
+            "dark brown eyes, shoulder-length dark brown hair, slim child body, " +
+            "wearing a yellow hoodie, blue jeans and white sneakers";
+
+    } else if (characterType === "boy") {
+
+        characterDescription =
+            "young boy with a youthful face, dark eyes, short dark hair, " +
+            "slim child body, casual shirt, jeans and sneakers";
+
+    } else if (characterType === "girl") {
+
+        characterDescription =
+            "young girl with a youthful face, dark eyes, dark hair, " +
+            "slim child body, casual clothing and sneakers";
+
+    } else if (characterType === "woman") {
+
+        characterDescription =
+            "adult woman with a natural realistic face, dark eyes, dark hair, " +
+            "average athletic body proportions, casual modern clothing and sneakers";
+
+    } else if (characterType === "man") {
+
+        characterDescription =
+            "adult man with a natural realistic face, dark eyes, short dark hair, " +
+            "average athletic body proportions, casual modern clothing and sneakers";
+
+    } else {
+
+        characterDescription =
+            "realistic young adult main character with natural facial features, " +
+            "consistent hairstyle, clothing and body proportions";
+    }
+
+
+    const masterCharacterLock =
+        `MASTER CHARACTER LOCK: ${characterDescription}. ` +
+        `This is the permanent identity of the main character for the entire video. ` +
+        `Keep exactly the same face, age, hairstyle, hair color, eye color, skin tone, ` +
+        `body proportions, clothing, footwear and accessories in every scene. ` +
+        `Do not redesign, replace, age, de-age or randomly change the character.`;
 
 
     /* =====================================================
        STORY ELEMENT LOCK
     ===================================================== */
 
-    const storyElementLock = {
-        description:
-            `Important story elements: ${importantElements.join("; ")}. ` +
-            `Keep every important element visually consistent whenever it appears.`
-    };
+    let importantElements = [];
+
+    if (
+        lowerStory.includes("puppy") ||
+        lowerStory.includes("dog")
+    ) {
+        importantElements.push(
+            "the same puppy/dog with consistent breed, fur color, size, face and collar"
+        );
+    }
+
+    if (lowerStory.includes("cat")) {
+        importantElements.push(
+            "the same cat with consistent fur color, size, face and appearance"
+        );
+    }
+
+    if (lowerStory.includes("car")) {
+        importantElements.push(
+            "the same car with consistent make, model, color and visible details"
+        );
+    }
+
+    if (lowerStory.includes("house")) {
+        importantElements.push(
+            "the same house, entrance, surroundings and recognizable details"
+        );
+    }
+
+    if (lowerStory.includes("city")) {
+        importantElements.push(
+            "the same city environment, street layout and recognizable landmarks"
+        );
+    }
+
+    if (lowerStory.includes("forest")) {
+        importantElements.push(
+            "the same forest environment, trees, paths and recognizable landmarks"
+        );
+    }
+
+    if (lowerStory.includes("school")) {
+        importantElements.push(
+            "the same school building, classroom and recognizable locations"
+        );
+    }
+
+    if (lowerStory.includes("owner")) {
+        importantElements.push(
+            "the owner as a consistent supporting character whenever discovered"
+        );
+    }
+
+    if (importantElements.length === 0) {
+
+        importantElements.push(
+            "all important characters, objects and locations explicitly mentioned in the user's story"
+        );
+    }
+
+
+    const storyElementLock =
+        `STORY ELEMENT LOCK: ${importantElements.join("; ")}. ` +
+        `Keep every important story element visually consistent whenever it appears.`;
 
 
     /* =====================================================
-       STORY PHASES
+       SPECIAL STORY: LOST PET
     ===================================================== */
-
-    const storyPhases = [
-
-        {
-            name: "Opening",
-            instruction:
-                `Clearly establish the beginning of this exact story: "${story}". ` +
-                `Show the main character in the correct setting and introduce the central situation.`
-        },
-
-        {
-            name: "Discovery",
-            instruction:
-                `Show the main character discovering the central person, animal, object, ` +
-                `place or event that drives the user's story.`
-        },
-
-        {
-            name: "Goal",
-            instruction:
-                `Clearly show what the main character wants to accomplish based on the user's story.`
-        },
-
-        {
-            name: "Obstacle",
-            instruction:
-                `Show a specific obstacle that naturally prevents the main character from immediately achieving the goal.`
-        },
-
-        {
-            name: "Attempt",
-            instruction:
-                `Show the main character making a concrete attempt to solve the problem.`
-        },
-
-        {
-            name: "Complication",
-            instruction:
-                `Introduce a new development directly connected to the existing story, increasing the challenge.`
-        },
-
-        {
-            name: "Progress",
-            instruction:
-                `Show the main character discovering a clue, opportunity or action that moves the story closer to its goal.`
-        },
-
-        {
-            name: "Climax",
-            instruction:
-                `Show the central decisive moment where the main character acts to solve the main problem.`
-        },
-
-        {
-            name: "Resolution",
-            instruction:
-                `Show the central problem being resolved according to the user's story.`
-        },
-
-        {
-            name: "Ending",
-            instruction:
-                `Create a natural emotional ending that follows directly from the resolution of the user's story.`
-        }
-    ];
-
-
-    /* =====================================================
-       SPECIAL STORY TEMPLATE: LOST PET / OWNER
-       This makes the current puppy test substantially
-       more story-specific without using Gemini.
-    ===================================================== */
-
-    let specialScenes = null;
 
     const isLostPetStory =
-        (lowerStory.includes("puppy") || lowerStory.includes("dog")) &&
+        (lowerStory.includes("puppy") ||
+         lowerStory.includes("dog")) &&
         (
             lowerStory.includes("lost") ||
             lowerStory.includes("owner") ||
@@ -242,13 +216,15 @@ app.post("/api/demo-project", (req, res) => {
         );
 
 
+    let specialScenes = null;
+
     if (isLostPetStory) {
 
         specialScenes = [
 
             {
                 visual:
-                    `In a busy city street, the ${characterType} notices a small lost puppy standing alone near the sidewalk while crowds move around it. The puppy looks confused and has a visible collar.`,
+                    `In a busy city street, the ${characterType} notices a small lost puppy standing alone near the sidewalk while crowds move around it. The puppy has consistent fur, size and a visible collar.`,
 
                 action:
                     `The ${characterType} stops walking, notices the puppy and carefully approaches it without frightening it.`,
@@ -262,7 +238,7 @@ app.post("/api/demo-project", (req, res) => {
 
             {
                 visual:
-                    `The ${characterType} kneels beside the same puppy and gently checks its collar while the busy city continues around them.`,
+                    `The ${characterType} kneels beside the same puppy and gently checks its collar while the same busy city street continues around them.`,
 
                 action:
                     `He calmly pets the puppy, checks the collar and searches for an identification tag or owner information.`,
@@ -276,10 +252,10 @@ app.post("/api/demo-project", (req, res) => {
 
             {
                 visual:
-                    `The ${characterType} examines the puppy's collar and realizes the owner information is incomplete or difficult to read.`,
+                    `The ${characterType} examines the same puppy's collar and realizes the owner information is incomplete or difficult to read.`,
 
                 action:
-                    `He looks around the crowded street, then checks nearby people and signs while keeping the puppy safely beside him.`,
+                    `He looks around the crowded street, checks nearby people and signs while keeping the puppy safely beside him.`,
 
                 dialogue:
                     "We need another clue.",
@@ -290,7 +266,7 @@ app.post("/api/demo-project", (req, res) => {
 
             {
                 visual:
-                    `The ${characterType} walks carefully through the same city block with the puppy, asking nearby pedestrians if they recognize the dog.`,
+                    `The ${characterType} walks carefully through the same city block with the same puppy, asking nearby pedestrians if they recognize the dog.`,
 
                 action:
                     `He approaches several pedestrians while keeping the puppy close and continues searching for someone who knows the dog.`,
@@ -304,7 +280,7 @@ app.post("/api/demo-project", (req, res) => {
 
             {
                 visual:
-                    `The puppy suddenly becomes alert and looks toward a familiar side street, pulling gently in that direction while the ${characterType} notices.`,
+                    `The same puppy suddenly becomes alert and looks toward a familiar side street while the ${characterType} notices.`,
 
                 action:
                     `The ${characterType} follows the puppy toward the side street, realizing the animal may recognize the area.`,
@@ -332,10 +308,10 @@ app.post("/api/demo-project", (req, res) => {
 
             {
                 visual:
-                    `At the end of the street, the puppy reacts excitedly when it sees a worried person searching the area for a missing dog.`,
+                    `At the end of the street, the same puppy reacts excitedly when it sees a worried person searching for a missing dog.`,
 
                 action:
-                    `The ${characterType} notices the worried person, stops and compares the puppy's collar with the person's reaction.`,
+                    `The ${characterType} notices the worried person and safely brings the puppy closer.`,
 
                 dialogue:
                     "Are you looking for this puppy?",
@@ -349,7 +325,7 @@ app.post("/api/demo-project", (req, res) => {
                     `The worried owner recognizes the same puppy and rushes toward it as the ${characterType} safely brings the puppy forward.`,
 
                 action:
-                    `The puppy runs toward the owner, and the ${characterType} steps aside as the reunion happens.`,
+                    `The puppy runs toward the owner while the ${characterType} steps aside and watches the reunion.`,
 
                 dialogue:
                     "I think we found them.",
@@ -363,7 +339,7 @@ app.post("/api/demo-project", (req, res) => {
                     `The owner hugs the same puppy with relief while the ${characterType} stands nearby smiling in the same city location.`,
 
                 action:
-                    `The owner thanks the ${characterType} while holding the puppy safely, creating an emotional reunion moment.`,
+                    `The owner thanks the ${characterType} while holding the puppy safely.`,
 
                 dialogue:
                     "I'm glad I could help.",
@@ -374,23 +350,51 @@ app.post("/api/demo-project", (req, res) => {
 
             {
                 visual:
-                    `The ${characterType} walks away through the same city street as the reunited owner and puppy remain safely together in the background.`,
+                    `The ${characterType} walks away through the same city street while the reunited owner and puppy remain safely together in the background.`,
 
                 action:
-                    `He looks back with a smile, then continues walking as the city returns to its normal rhythm.`,
+                    `He looks back with a smile and continues walking as the city returns to its normal rhythm.`,
 
                 dialogue:
                     "Sometimes kindness changes everything.",
 
                 voiceover:
-                    "And sometimes, helping someone find their way home is all it takes to make a difference."
+                    "Sometimes helping someone find their way home is all it takes to make a difference."
             }
         ];
     }
 
 
     /* =====================================================
-       GENERIC STORY SCENES
+       GENERIC STORY PHASES
+    ===================================================== */
+
+    const storyPhases = [
+
+        "Opening: establish the exact beginning of the user's story and introduce the central situation.",
+
+        "Discovery: show the main character discovering the important person, animal, object, place or event in the user's story.",
+
+        "Goal: clearly show what the main character needs or wants to accomplish.",
+
+        "Obstacle: introduce a story-relevant problem that prevents immediate success.",
+
+        "Attempt: show a concrete action taken to solve the problem.",
+
+        "Complication: introduce a new development connected directly to the existing story.",
+
+        "Progress: show a clue, discovery or action that moves the story forward.",
+
+        "Climax: show the decisive moment where the main character acts.",
+
+        "Resolution: show the central problem being resolved.",
+
+        "Ending: create a natural ending that follows from the resolution."
+    ];
+
+
+    /* =====================================================
+       SCENE CREATION
     ===================================================== */
 
     const scenes = [];
@@ -401,47 +405,47 @@ app.post("/api/demo-project", (req, res) => {
 
         if (specialScenes) {
 
-            const index =
-                Math.min(i - 1, specialScenes.length - 1);
-
-            beat = specialScenes[index];
+            beat =
+                specialScenes[
+                    Math.min(i - 1, specialScenes.length - 1)
+                ];
 
         } else {
 
-            const phaseIndex =
-                Math.min(i - 1, storyPhases.length - 1);
-
-            const phase = storyPhases[phaseIndex];
+            const phase =
+                storyPhases[
+                    Math.min(i - 1, storyPhases.length - 1)
+                ];
 
             beat = {
 
                 visual:
-                    `${phase.instruction} ` +
-                    `Use only events, characters, objects and locations that make sense for the user's story.`,
+                    `${phase} ` +
+                    `Use only characters, objects, locations and events that logically belong to this user's story.`,
 
                 action:
-                    `The ${characterType} performs a concrete action that directly advances this story phase.`,
+                    `The ${characterType} performs a concrete action directly connected to the user's story.`,
 
                 dialogue:
                     i === 1
-                        ? "What should I do?"
+                        ? "This is where it begins."
                         : i === 2
                             ? "I need to understand this."
                             : i === 3
-                                ? "There has to be a way."
+                                ? "I know what I have to do."
                                 : i === 4
-                                    ? "I can't give up now."
+                                    ? "This won't be easy."
                                     : i === 5
-                                        ? "Let's keep going."
+                                        ? "I'll find a way."
                                         : i === 6
                                             ? "Something changed."
                                             : i === 7
-                                                ? "I'm getting closer."
+                                                ? "We're getting closer."
                                                 : i === 8
                                                     ? "This is the moment."
                                                     : i === 9
-                                                        ? "We did it."
-                                                        : "I'll never forget this.",
+                                                        ? "It's finally over."
+                                                        : "I'll remember this.",
 
                 voiceover:
                     i === 1
@@ -453,16 +457,16 @@ app.post("/api/demo-project", (req, res) => {
                                 : i === 4
                                     ? "But reaching that goal would not be easy."
                                     : i === 5
-                                        ? "He decided to take action."
+                                        ? "The character decided to take action."
                                         : i === 6
-                                            ? "Then an unexpected complication appeared."
+                                            ? "Then something unexpected changed the situation."
                                             : i === 7
-                                                ? "A new clue finally moved the story forward."
+                                                ? "A new clue moved the story forward."
                                                 : i === 8
                                                     ? "Everything came down to one decisive moment."
                                                     : i === 9
                                                         ? "The central problem was finally resolved."
-                                                        : "The experience became a memory he would always carry."
+                                                        : "The experience became a memory that would last."
             };
         }
 
@@ -478,8 +482,8 @@ app.post("/api/demo-project", (req, res) => {
             duration: 10,
 
             visual_prompt:
-                `${characterLock.description} ` +
-                `${storyElementLock.description} ` +
+                `${masterCharacterLock} ` +
+                `${storyElementLock} ` +
                 `USER STORY: "${story}". ` +
                 `SCENE ${i}. ` +
                 `${beat.visual} ` +
@@ -492,15 +496,15 @@ app.post("/api/demo-project", (req, res) => {
 
             camera:
                 i === 1
-                    ? "Wide cinematic establishing shot followed by a smooth move toward the main character and the central story action."
+                    ? "Wide cinematic establishing shot followed by a smooth move toward the main character and central story action."
                     : i % 4 === 0
-                        ? "Smooth cinematic tracking shot following the main character and the important story action."
+                        ? "Smooth cinematic tracking shot following the main character and important story action."
                         : i % 3 === 0
                             ? "Medium close-up with a slow cinematic push toward the character's emotional reaction."
-                            : "Cinematic over-the-shoulder shot transitioning into a smooth natural camera movement.",
+                            : "Cinematic over-the-shoulder shot transitioning into smooth natural camera movement.",
 
             lighting:
-                "Maintain consistent lighting, color mood, weather, shadows, environment and time of day across the entire connected story.",
+                "Maintain the same lighting, color mood, weather, shadows, environment and time of day across the connected story.",
 
             action:
                 `${beat.action} Complete the entire action naturally within exactly 10 seconds.`,
@@ -513,9 +517,10 @@ app.post("/api/demo-project", (req, res) => {
 
             continuity:
                 i === 1
-                    ? "Opening scene establishes the exact main character, important story elements, location and starting situation."
-                    : `Continue directly from Scene ${i - 1}. Keep the exact same character appearance, ` +
-                      `supporting characters, animals, props, vehicles, locations, weather, lighting, ` +
+                    ? "Opening scene establishes the permanent character identity, important story elements, location and starting situation."
+                    : `Continue directly from Scene ${i - 1}. Maintain the MASTER CHARACTER LOCK exactly. ` +
+                      `Keep the same face, age, hairstyle, skin tone, eyes, body proportions, clothing, footwear and accessories. ` +
+                      `Keep the same supporting characters, animals, props, vehicles, locations, weather, lighting, ` +
                       `time of day, camera geography, emotional state and physical positions. ` +
                       `Begin from the previous scene's ending position.`
         });
@@ -530,7 +535,7 @@ app.post("/api/demo-project", (req, res) => {
 
         status: "success",
 
-        message: "Smart Demo V5 project created successfully",
+        message: "SANAPTAI V6 Master Character Lock project created successfully",
 
         project: {
 
@@ -544,9 +549,18 @@ app.post("/api/demo-project", (req, res) => {
 
             aspectRatio: ratio,
 
-            characterLocks: [characterLock],
+            characterLocks: [
+                {
+                    name: "MASTER CHARACTER",
+                    description: characterDescription
+                }
+            ],
 
-            storyElements: [storyElementLock],
+            storyElements: [
+                {
+            description: storyElementLock
+                }
+            ],
 
             scenes: scenes
         }
@@ -556,7 +570,7 @@ app.post("/api/demo-project", (req, res) => {
 
 /* =========================================================
    AI SCENE PLANNER
-   Kept for future AI mode
+   Future AI mode
 ========================================================= */
 
 app.post("/api/plan-scenes", async (req, res) => {
@@ -651,13 +665,9 @@ ${prompt}
         }
 
         res.json({
-
             status: "success",
-
             message: "AI scene plan created successfully",
-
             project
-
         });
 
     } catch (error) {
@@ -670,21 +680,15 @@ ${prompt}
         ) {
 
             return res.status(429).json({
-
                 error: "Gemini quota exceeded",
-
                 message:
                     "Gemini free-tier limit reached. Please wait and try again later."
-
             });
         }
 
         res.status(500).json({
-
             error: "AI scene planning failed",
-
             message: error?.message || "Unknown Gemini error"
-
         });
     }
 });
@@ -724,7 +728,6 @@ app.post("/api/create-project", (req, res) => {
             totalScenes,
 
             aspectRatio: aspectRatio || "16:9"
-
         }
     });
 });
@@ -737,7 +740,7 @@ app.post("/api/create-project", (req, res) => {
 app.listen(PORT, () => {
 
     console.log(
-        `SANAPTAI server running on port ${PORT}`
+        `SANAPTAI V6 server running on port ${PORT}`
     );
 
-});
+ });       
