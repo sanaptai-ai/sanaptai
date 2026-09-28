@@ -59,7 +59,61 @@ app.post('/api/create-project', (req, res) => {
     });
 });
 
+// Demo Mode - works without Gemini
+app.post('/api/demo-project', (req, res) => {
 
+    const { prompt, duration } = req.body;
+
+    if (!prompt) {
+        return res.status(400).json({
+            error: 'Video prompt is required'
+        });
+    }
+
+    const totalSeconds = Number(duration) || 10;
+    const totalScenes = Math.ceil(totalSeconds / 10);
+
+    const scenes = [];
+
+    for (let i = 1; i <= totalScenes; i++) {
+        scenes.push({
+            scene: i,
+            start: (i - 1) * 10,
+            end: i * 10,
+            duration: 10,
+
+            visual_prompt:
+                `Cinematic video scene based on: ${prompt}. ` +
+                `Maintain consistent characters, environment, lighting and visual style.`,
+
+            camera: "Cinematic medium shot with smooth tracking movement.",
+
+            lighting: "Natural cinematic lighting matching the environment.",
+
+            action:
+                "The character performs the main action naturally and continuously.",
+
+            dialogue: "",
+
+            voiceover: "",
+
+            continuity:
+                "Continue directly from the previous scene while maintaining visual and character consistency."
+        });
+    }
+
+    res.json({
+        status: 'success',
+        message: 'Demo project created successfully',
+        project: {
+            duration: totalSeconds,
+            sceneDuration: 10,
+            totalScenes,
+            characterLocks: [],
+            scenes
+        }
+    });
+});
 // AI Scene Planner
 app.post('/api/plan-scenes', async (req, res) => {
 
