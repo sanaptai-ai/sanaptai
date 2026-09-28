@@ -12,55 +12,41 @@ app.use(express.static("public"));
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
-/* =========================
-   BASIC HELPERS
-========================= */
-
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function splitSentences(text) {
-  return cleanText(text)
-    .split(/(?<=[.!?])\s+/)
-    .map(s => s.trim())
-    .filter(Boolean);
+function durationToSeconds(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 30;
+}
+
+function sceneCount(seconds) {
+  return Math.max(1, Math.ceil(seconds / 10));
 }
 
 function has(text, words) {
-  const t = text.toLowerCase();
-  return words.some(word => t.includes(word.toLowerCase()));
+  const t = String(text || "").toLowerCase();
+  return words.some(w => t.includes(w.toLowerCase()));
 }
 
 function unique(arr) {
   return [...new Set(arr)];
 }
 
-function durationToSeconds(duration) {
-  const value = Number(duration);
-  if (!Number.isFinite(value) || value <= 0) return 30;
-  return value;
-}
-
-function createSceneCount(seconds) {
-  return Math.max(1, Math.ceil(seconds / 10));
-}
-
-/* =========================
-   STORY PARSER
-========================= */
+/* =========================================================
+   CHARACTER PARSER
+========================================================= */
 
 function parseCharacters(text) {
+  const t = text.toLowerCase();
   const characters = [];
 
-  const lower = text.toLowerCase();
-
-  // Main character detection has priority.
   if (
-    lower.includes("ethan") ||
-    lower.includes("12-year-old boy") ||
-    lower.includes("12 year old boy") ||
-    lower.includes("young boy")
+    t.includes("ethan") ||
+    t.includes("12-year-old boy") ||
+    t.includes("12 year old boy") ||
+    t.includes("young boy")
   ) {
     characters.push({
       name: "Ethan",
@@ -68,57 +54,26 @@ function parseCharacters(text) {
       description:
         "12-year-old boy, youthful round face, dark brown eyes, short slightly messy black hair, slim child build, blue casual shirt, dark blue jeans and white sneakers"
     });
-  } else if (lower.includes("boy")) {
+  } else if (t.includes("boy")) {
     characters.push({
       name: "Boy",
       role: "main character",
       description:
         "young boy with youthful face, dark brown eyes, short slightly messy black hair, slim child build, blue shirt, dark blue jeans and white sneakers"
     });
-  } else if (lower.includes("girl")) {
-    characters.push({
-      name: "Girl",
-      role: "main character",
-      description:
-        "young girl with youthful face, dark eyes, long dark hair, simple casual clothes and consistent appearance"
-    });
-  } else if (lower.includes("woman")) {
-    characters.push({
-      name: "Woman",
-      role: "main character",
-      description:
-        "adult woman with natural facial features and consistent casual clothing"
-    });
-  } else if (lower.includes("man")) {
-    characters.push({
-      name: "Man",
-      role: "main character",
-      description:
-        "adult man with natural facial features and consistent casual clothing"
-    });
   }
 
-  if (has(lower, ["mother", "mom"])) {
+  if (has(t, ["mother", "mom"])) {
     characters.push({
       name: "Mother",
       role: "supporting character",
       description:
-        "Ethan's mother, adult woman with warm natural face, dark hair and simple comfortable home clothing"
+        "adult woman with warm natural face, dark hair and simple comfortable home clothing"
     });
   }
 
-  if (has(lower, ["father", "dad"])) {
-    characters.push({
-      name: "Father",
-      role: "supporting character",
-      description:
-        "Ethan's father, adult man with natural features and casual clothing"
-    });
-  }
-
-  // The rescued girl must NOT replace Ethan as the main character.
   if (
-    has(lower, [
+    has(t, [
       "frightened girl",
       "trapped girl",
       "girl trapped",
@@ -133,17 +88,17 @@ function parseCharacters(text) {
     });
   }
 
-  if (has(lower, ["dangerous man", "villain", "enemy"])) {
+  if (has(t, ["dangerous man", "villain", "enemy"])) {
     characters.push({
       name: "Dangerous Man",
       role: "antagonist",
       description:
-        "tall intimidating adult man, dark hair, rough beard, dark weathered jacket, cold expression, consistent appearance"
+        "tall intimidating adult man, dark hair, rough beard, dark weathered jacket and cold expression, consistent appearance"
     });
   }
 
   if (
-    has(lower, [
+    has(t, [
       "her family",
       "girl's family",
       "girls family",
@@ -155,46 +110,37 @@ function parseCharacters(text) {
       name: "Girl's Family",
       role: "supporting characters",
       description:
-        "family members waiting anxiously for the rescued girl in the town"
+        "family members waiting anxiously for the rescued girl in town"
     });
   }
 
   return characters;
 }
 
+/* =========================================================
+   STORY ELEMENT PARSER
+========================================================= */
+
 function parseLocations(text) {
+  const t = text.toLowerCase();
   const locations = [];
-  const lower = text.toLowerCase();
 
-  if (has(lower, ["small town", "town"])) {
-    locations.push("small town");
-  }
-
-  if (has(lower, ["house", "home", "their house", "family house"])) {
-    locations.push("family house");
-  }
-
-  if (has(lower, ["floor", "beneath the floor"])) {
+  if (has(t, ["small town", "town"])) locations.push("small town");
+  if (has(t, ["house", "home"])) locations.push("family house");
+  if (has(t, ["floor", "floorboard"])) {
     locations.push("family house interior");
   }
-
-  if (has(lower, ["forest", "woods"])) {
-    locations.push("nearby forest");
-  }
-
-  if (has(lower, ["cabin", "abandoned cabin"])) {
+  if (has(t, ["forest", "woods"])) locations.push("nearby forest");
+  if (has(t, ["abandoned cabin", "cabin"])) {
     locations.push("abandoned cabin");
   }
-
-  if (has(lower, ["locked room", "locked cabin room"])) {
+  if (has(t, ["locked room"])) {
     locations.push("locked room inside cabin");
   }
-
-  if (has(lower, ["secret tunnel", "tunnel"])) {
+  if (has(t, ["secret tunnel", "tunnel"])) {
     locations.push("secret tunnel beneath cabin");
   }
-
-  if (has(lower, ["sunrise", "sunrise town"])) {
+  if (has(t, ["sunrise", "dawn"])) {
     locations.push("town at sunrise");
   }
 
@@ -202,26 +148,26 @@ function parseLocations(text) {
 }
 
 function parseObjects(text) {
+  const t = text.toLowerCase();
   const objects = [];
-  const lower = text.toLowerCase();
 
-  if (has(lower, ["wooden box", "old wooden box", "box"])) {
+  if (has(t, ["wooden box", "box"])) {
     objects.push("old wooden box");
   }
 
-  if (has(lower, ["wooden floor", "floorboard", "floor"])) {
+  if (has(t, ["wooden floor", "floorboard", "floor"])) {
     objects.push("wooden floor");
   }
 
-  if (has(lower, ["map", "mysterious map"])) {
+  if (has(t, ["mysterious map", "map"])) {
     objects.push("mysterious map");
   }
 
-  if (has(lower, ["locked room", "locked door"])) {
+  if (has(t, ["locked room", "locked door"])) {
     objects.push("locked room door");
   }
 
-  if (has(lower, ["secret tunnel", "tunnel"])) {
+  if (has(t, ["secret tunnel", "tunnel"])) {
     objects.push("secret tunnel entrance");
   }
 
@@ -229,660 +175,548 @@ function parseObjects(text) {
 }
 
 function parseConditions(text) {
+  const t = text.toLowerCase();
   const conditions = [];
-  const lower = text.toLowerCase();
 
-  if (has(lower, ["one evening", "evening"])) {
-    conditions.push("evening");
-  }
-
-  if (has(lower, ["sunrise", "dawn"])) {
-    conditions.push("sunrise");
-  }
-
-  if (has(lower, ["dark", "darkness"])) {
-    conditions.push("dark atmosphere");
-  }
+  if (has(t, ["evening"])) conditions.push("evening");
+  if (has(t, ["sunrise", "dawn"])) conditions.push("sunrise");
+  if (has(t, ["dark", "darkness"])) conditions.push("dark atmosphere");
 
   return unique(conditions);
 }
 
-function parseStory(text) {
-  const sentences = splitSentences(text);
+/* =========================================================
+   STORY UNDERSTANDING
+========================================================= */
+
+function understandStory(text) {
+  const t = cleanText(text);
 
   return {
-    sentences,
-    characters: parseCharacters(text),
-    locations: parseLocations(text),
-    objects: parseObjects(text),
-    conditions: parseConditions(text),
-    goal: has(text, ["rescue", "escape", "bring", "safely back"])
-      ? "Rescue the trapped girl and bring her safely back to town."
-      : "Complete the main objective of the story.",
-    conflict: has(text, ["dangerous man", "villain", "enemy"])
-      ? "A dangerous man arrives and threatens Ethan and the rescued girl."
-      : "The characters must overcome obstacles.",
-    climax: has(text, ["dangerous man", "secret tunnel"])
-      ? "Ethan and the girl discover a secret tunnel and escape."
-      : "The main characters overcome the central obstacle.",
-    resolution: has(text, ["sunrise", "family is waiting", "family waiting"])
-      ? "Ethan brings the girl safely back to town and her family is waiting."
-      : "The story reaches its resolution."
+    characters: parseCharacters(t),
+    locations: parseLocations(t),
+    objects: parseObjects(t),
+    conditions: parseConditions(t),
+    goal: "Rescue the trapped girl and bring her safely back to town.",
+    conflict:
+      "A dangerous man arrives at the cabin while Ethan and the rescued girl search for an escape.",
+    climax:
+      "Ethan and the rescued girl discover a secret tunnel and use it to escape.",
+    resolution:
+      "At sunrise Ethan brings the girl safely back to town where her family is waiting."
   };
 }
 
-/* =========================
-   SPECIAL ETHAN STORY
-   EXACT 30 ATOMIC BEATS
-========================= */
+/* =========================================================
+   V12.1 — COMPLETE 30-SCENE ETHAN TIMELINE
+========================================================= */
 
-function ethanTimeline(text) {
-  const lower = text.toLowerCase();
-
-  const isEthanStory =
-    lower.includes("ethan") &&
-    lower.includes("wooden box") &&
-    lower.includes("map") &&
-    lower.includes("forest") &&
-    lower.includes("cabin") &&
-    lower.includes("dangerous man") &&
-    lower.includes("secret tunnel");
-
-  if (!isEthanStory) return null;
-
+function ethanTimeline() {
   return [
+
     {
       location: "small town",
       characters: ["Ethan", "Mother"],
       objects: [],
-      action: "Ethan lives quietly with his mother in their small town.",
+      action: "Ethan lives with his mother in their quiet small town.",
       dialogue: "Mom, everything feels so quiet here.",
       voiceover: "Twelve-year-old Ethan lived with his mother in a quiet small town.",
-      camera: "Wide establishing shot of the small town, then a gentle push toward Ethan's family house.",
+      camera: "Wide establishing shot slowly moving toward Ethan's house.",
       lighting: "Warm late-afternoon natural light."
     },
+
     {
       location: "family house",
       characters: ["Ethan", "Mother"],
       objects: [],
-      action: "Ethan returns inside the family house as evening approaches.",
+      action: "Ethan spends the evening at home with his mother.",
       dialogue: "I'll help you before I go upstairs.",
-      voiceover: "As evening arrived, Ethan returned home and helped his mother around the house.",
-      camera: "Medium tracking shot following Ethan through the doorway.",
-      lighting: "Soft warm indoor evening light."
+      voiceover: "That evening, Ethan returned home as the daylight began to fade.",
+      camera: "Medium tracking shot following Ethan through the house.",
+      lighting: "Soft warm evening interior light."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["wooden floor"],
-      action: "Ethan notices an unusual gap between old wooden floorboards.",
+      action: "Ethan notices a strange gap between the old wooden floorboards.",
       dialogue: "Wait... what's that under the floor?",
-      voiceover: "Then Ethan noticed something unusual beneath the old wooden floor.",
-      camera: "Close-up on Ethan's eyes, followed by a slow tilt toward the floorboards.",
-      lighting: "Dim evening light with a narrow beam across the floor."
+      voiceover: "Something unusual beneath the old floorboards caught Ethan's attention.",
+      camera: "Close-up of Ethan noticing the floor.",
+      lighting: "Dim evening light with a narrow beam."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["wooden floor"],
-      action: "Ethan kneels and examines the loose floorboard.",
+      action: "Ethan kneels and tests the loose floorboard with his hands.",
       dialogue: "This board wasn't loose before.",
-      voiceover: "Curious, Ethan knelt down and examined the loose board.",
-      camera: "Over-the-shoulder close-up of Ethan touching the floorboard.",
-      lighting: "Warm but slightly mysterious interior lighting."
+      voiceover: "Ethan carefully examined the loose wooden board.",
+      camera: "Over-the-shoulder close-up of his hands.",
+      lighting: "Warm mysterious interior lighting."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["wooden floor", "old wooden box"],
-      action: "Ethan lifts the floorboard and discovers an old wooden box hidden underneath.",
+      action: "Ethan lifts the floorboard and sees an old wooden box hidden underneath.",
       dialogue: "There's a box down here.",
-      voiceover: "Beneath the board, he discovered an old wooden box.",
-      camera: "Low-angle reveal as the hidden box appears.",
-      lighting: "Focused light on the dusty wooden box."
+      voiceover: "Beneath the floor, Ethan discovered an old wooden box.",
+      camera: "Low-angle reveal of the hidden box.",
+      lighting: "Focused light on the dusty box."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["old wooden box"],
-      action: "Ethan carefully pulls the old box from beneath the floor.",
+      action: "Ethan pulls the heavy wooden box completely out from beneath the floor.",
       dialogue: "I wonder who hid this.",
-      voiceover: "Ethan slowly pulled the mysterious box into the room.",
-      camera: "Medium shot with a slow dolly backward as Ethan pulls the box free.",
-      lighting: "Soft warm light with subtle shadows."
+      voiceover: "He carefully pulled the mysterious box into the room.",
+      camera: "Medium dolly shot following the box.",
+      lighting: "Soft warm interior light."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["old wooden box"],
-      action: "Ethan studies the dusty box and searches for a way to open it.",
+      action: "Ethan examines the dusty box and searches for its opening.",
       dialogue: "Come on... open.",
-      voiceover: "Dust covered the box, but Ethan could not resist discovering what was inside.",
-      camera: "Tight close-up of the box and Ethan's hands.",
-      lighting: "Focused indoor light."
+      voiceover: "The dusty box showed signs of being hidden for years.",
+      camera: "Tight close-up of Ethan examining the box.",
+      lighting: "Focused indoor lighting."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["old wooden box"],
-      action: "Ethan opens the wooden box.",
+      action: "Ethan finally opens the wooden box.",
       dialogue: "Whoa... there's something inside.",
-      voiceover: "With a careful pull, Ethan finally opened the ancient box.",
-      camera: "Extreme close-up of the lid opening, then reveal Ethan's surprised face.",
-      lighting: "A dramatic shaft of warm light falls across the box."
+      voiceover: "With a careful pull, Ethan opened the ancient box.",
+      camera: "Extreme close-up of the lid opening.",
+      lighting: "Dramatic warm beam across the box."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["old wooden box", "mysterious map"],
       action: "Ethan discovers a mysterious map inside the box.",
       dialogue: "A map? Where does this lead?",
-      voiceover: "Inside was a mysterious map marked with a route beyond the town.",
-      camera: "Top-down shot of Ethan unfolding the map.",
-      lighting: "Warm light centered on the map."
+      voiceover: "Inside the box was a mysterious map marked with an unknown route.",
+      camera: "Top-down shot of the map.",
+      lighting: "Warm focused light."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["mysterious map"],
-      action: "Ethan carefully unfolds the entire map and studies its markings.",
+      action: "Ethan unfolds the map and studies its strange markings.",
       dialogue: "There's a forest marked here.",
-      voiceover: "The map revealed a path leading toward a nearby forest.",
-      camera: "Slow overhead camera move across the map markings.",
+      voiceover: "The map revealed a route leading toward a nearby forest.",
+      camera: "Slow overhead movement across the map.",
       lighting: "Low warm evening light."
     },
+
     {
       location: "family house interior",
       characters: ["Ethan"],
       objects: ["mysterious map"],
-      action: "Ethan traces the route on the map with his finger.",
+      action: "Ethan traces the route with his finger and studies where it ends.",
       dialogue: "I have to see where this goes.",
-      voiceover: "The strange markings made Ethan determined to follow the route.",
-      camera: "Close-up tracking along Ethan's finger as it follows the route.",
-      lighting: "Focused warm light with darker room edges."
+      voiceover: "The mysterious route made Ethan determined to investigate.",
+      camera: "Macro tracking shot following his finger across the map.",
+      lighting: "Focused warm light."
     },
+
+    {
+      location: "family house",
+      characters: ["Ethan"],
+      objects: ["mysterious map"],
+      action: "Ethan prepares to leave the house with the folded map.",
+      dialogue: "I'll be back soon.",
+      voiceover: "The next morning, Ethan prepared to follow the map.",
+      camera: "Medium shot as Ethan puts the map safely away.",
+      lighting: "Fresh morning daylight."
+    },
+
     {
       location: "small town",
       characters: ["Ethan"],
       objects: ["mysterious map"],
-      action: "Ethan leaves the town carrying the folded map.",
-      dialogue: "I'll be back soon.",
-      voiceover: "The next day, Ethan left town with the mysterious map safely in his pocket.",
-      camera: "Wide rear tracking shot as Ethan walks away from town.",
-      lighting: "Fresh morning daylight."
+      action: "Ethan walks out of town toward the forest.",
+      dialogue: "The trail starts beyond town.",
+      voiceover: "Ethan left the familiar streets and headed toward the forest.",
+      camera: "Wide rear tracking shot.",
+      lighting: "Bright morning sunlight."
     },
+
     {
       location: "nearby forest",
       characters: ["Ethan"],
       objects: ["mysterious map"],
       action: "Ethan enters the forest and checks the map between the trees.",
       dialogue: "The trail should be close.",
-      voiceover: "The forest quickly surrounded Ethan as he followed the hidden route.",
-      camera: "Handheld-style tracking shot moving through the trees behind Ethan.",
-      lighting: "Cool filtered daylight through dense leaves."
+      voiceover: "The trees surrounded Ethan as he followed the hidden route.",
+      camera: "Tracking shot moving between trees.",
+      lighting: "Cool filtered daylight."
     },
+
     {
       location: "nearby forest",
       characters: ["Ethan"],
       objects: ["mysterious map"],
-      action: "Ethan follows the map deeper into the forest.",
+      action: "Ethan follows the marked path deeper into the forest.",
       dialogue: "This path keeps going deeper.",
-      voiceover: "The marked trail led him farther from the familiar town.",
-      camera: "Wide forest shot followed by a medium shot of Ethan walking.",
-      lighting: "Soft daylight with deep forest shadows."
+      voiceover: "The route carried Ethan farther away from the town.",
+      camera: "Wide forest shot followed by medium tracking.",
+      lighting: "Natural daylight with deep forest shadows."
     },
+
     {
       location: "nearby forest",
       characters: ["Ethan"],
       objects: ["mysterious map"],
-      action: "Ethan spots an abandoned cabin through the trees.",
+      action: "Ethan spots an abandoned cabin hidden between the trees.",
       dialogue: "There it is... the cabin.",
-      voiceover: "At last, Ethan saw an abandoned cabin hidden among the trees.",
-      camera: "Slow reveal from behind tree branches toward the cabin.",
-      lighting: "Muted daylight with mysterious shadows."
+      voiceover: "At last, Ethan spotted the abandoned cabin shown by the map.",
+      camera: "Slow reveal through foreground branches.",
+      lighting: "Muted daylight."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan"],
-      objects: ["mysterious map"],
-      action: "Ethan approaches the abandoned cabin cautiously.",
+      objects: [],
+      action: "Ethan cautiously approaches the cabin entrance.",
       dialogue: "Why would anyone hide this place?",
-      voiceover: "Ethan approached the silent cabin, unsure of what he would find.",
-      camera: "Slow forward dolly following Ethan toward the cabin door.",
+      voiceover: "Ethan approached the silent cabin with caution.",
+      camera: "Slow forward dolly toward the doorway.",
       lighting: "Overcast forest light."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan"],
       objects: [],
-      action: "Ethan enters the dark cabin and listens carefully.",
+      action: "Ethan enters the dark cabin and looks around.",
       dialogue: "Hello? Is anyone here?",
-      voiceover: "Inside, the cabin was dark and strangely quiet.",
-      camera: "Over-the-shoulder shot as Ethan steps through the doorway.",
-      lighting: "Dim interior light with narrow beams through broken windows."
+      voiceover: "Inside, the abandoned cabin was dark and strangely silent.",
+      camera: "Over-the-shoulder entrance shot.",
+      lighting: "Dim light through broken windows."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan"],
       objects: [],
-      action: "Ethan hears a strange sound coming from deeper inside.",
+      action: "Ethan suddenly hears a strange sound from deeper inside the cabin.",
       dialogue: "What was that sound?",
-      voiceover: "Then a faint sound came from somewhere deeper inside the cabin.",
-      camera: "Close-up on Ethan turning toward the sound, followed by a slow pan.",
-      lighting: "Low dramatic interior lighting."
+      voiceover: "Then a faint sound came from somewhere inside the cabin.",
+      camera: "Close-up on Ethan turning toward the sound.",
+      lighting: "Low suspenseful lighting."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan"],
       objects: [],
-      action: "Ethan follows the strange sound down a narrow hallway.",
+      action: "Ethan follows the sound down a narrow hallway.",
       dialogue: "I'm coming. Stay calm.",
-      voiceover: "Ethan followed the sound through the narrow, dusty hallway.",
+      voiceover: "Ethan followed the mysterious sound through a dusty hallway.",
       camera: "Slow tracking shot behind Ethan.",
-      lighting: "Dim light with long hallway shadows."
+      lighting: "Dim hallway shadows."
     },
+
     {
       location: "locked room inside cabin",
       characters: ["Ethan", "Rescued Girl"],
       objects: ["locked room door"],
       action: "Ethan discovers a frightened girl trapped behind a locked door.",
       dialogue: "You're trapped in there!",
-      voiceover: "Behind a locked door, Ethan discovered a frightened girl who needed help.",
-      camera: "Reveal shot from Ethan's perspective through the doorway bars.",
-      lighting: "Dim light with a soft beam illuminating the girl."
+      voiceover: "Behind the locked door, Ethan found a frightened girl.",
+      camera: "Reveal from Ethan's perspective.",
+      lighting: "Soft beam illuminating the girl."
     },
+
     {
       location: "locked room inside cabin",
       characters: ["Ethan", "Rescued Girl"],
       objects: ["locked room door"],
-      action: "Ethan speaks calmly to the frightened girl.",
+      action: "Ethan reassures the frightened girl that he will help her.",
       dialogue: "Don't worry. I'll get you out.",
-      voiceover: "Ethan reassured her that he would find a way to free her.",
-      camera: "Alternating close-ups of Ethan and the frightened girl.",
-      lighting: "Soft emotional light inside the dark room."
+      voiceover: "Ethan promised the frightened girl that he would find a way to free her.",
+      camera: "Alternating close-ups.",
+      lighting: "Soft emotional interior light."
     },
+
     {
       location: "locked room inside cabin",
       characters: ["Ethan", "Rescued Girl"],
       objects: ["locked room door"],
-      action: "Ethan searches the door and surrounding walls for a way to unlock it.",
+      action: "Ethan searches the locked door and nearby walls for an escape route.",
       dialogue: "There has to be another way.",
-      voiceover: "The lock would not open, so Ethan searched for another escape route.",
-      camera: "Close tracking shot across the lock and surrounding wooden walls.",
-      lighting: "Low suspenseful lighting."
+      voiceover: "The door would not open, so Ethan searched for another way out.",
+      camera: "Close tracking shot across the lock and walls.",
+      lighting: "Low suspense lighting."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan", "Rescued Girl", "Dangerous Man"],
       objects: [],
-      action: "A dangerous man suddenly arrives at the cabin.",
+      action: "A dangerous man suddenly enters the abandoned cabin.",
       dialogue: "Someone's coming!",
-      voiceover: "Suddenly, footsteps outside revealed that someone had returned to the cabin.",
-      camera: "Fast cut from Ethan's face to the cabin entrance.",
-      lighting: "Sudden dramatic shift into darker suspense lighting."
+      voiceover: "Suddenly, footsteps outside announced the arrival of a dangerous man.",
+      camera: "Fast cut toward the cabin entrance.",
+      lighting: "Dark dramatic lighting."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan", "Rescued Girl", "Dangerous Man"],
       objects: [],
-      action: "Ethan hides with the girl as the dangerous man enters the cabin.",
+      action: "Ethan quickly hides with the girl behind cover.",
       dialogue: "Stay quiet. Follow me.",
-      voiceover: "Ethan quickly hid with the girl before the dangerous man entered.",
-      camera: "Low-angle stealth shot following Ethan and the girl behind cover.",
-      lighting: "Dark interior with narrow light from the doorway."
+      voiceover: "Ethan pulled the girl into hiding before the man could see them.",
+      camera: "Low stealth tracking shot.",
+      lighting: "Dark shadows with doorway light."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan", "Rescued Girl", "Dangerous Man"],
       objects: [],
       action: "The dangerous man searches the cabin while Ethan and the girl remain hidden.",
       dialogue: "Don't make a sound.",
-      voiceover: "The man searched the cabin while Ethan and the girl waited silently.",
-      camera: "Intercut close-ups between the searching man and the hidden children.",
-      lighting: "Deep shadows and tense low-key lighting."
+      voiceover: "The man searched the cabin while the two stayed completely silent.",
+      camera: "Intercut shots between the man and the hiding pair.",
+      lighting: "Deep low-key suspense lighting."
     },
+
     {
       location: "abandoned cabin",
       characters: ["Ethan", "Rescued Girl"],
       objects: [],
-      action: "After the man moves away, Ethan notices a hidden opening beneath the cabin.",
+      action: "The dangerous man moves away, and Ethan notices a concealed opening beneath the cabin floor.",
       dialogue: "Look! There's something under here.",
-      voiceover: "When the danger passed, Ethan noticed a hidden opening beneath the cabin.",
-      camera: "Close-up on Ethan discovering the concealed floor opening.",
-      lighting: "A narrow beam of light reveals the hidden entrance."
+      voiceover: "When the danger moved away, Ethan noticed a hidden opening.",
+      camera: "Close-up revealing the concealed floor entrance.",
+      lighting: "Narrow beam revealing the opening."
     },
+
     {
       location: "secret tunnel beneath cabin",
       characters: ["Ethan", "Rescued Girl"],
       objects: ["secret tunnel entrance"],
       action: "Ethan and the girl enter the secret tunnel beneath the cabin.",
       dialogue: "This tunnel might lead outside.",
-      voiceover: "The hidden passage offered them one chance to escape.",
-      camera: "Rear tracking shot as both enter the narrow tunnel.",
-      lighting: "Dark tunnel illuminated by faint natural light ahead."
+      voiceover: "Ethan realized the hidden tunnel could be their escape.",
+      camera: "Rear tracking shot entering the tunnel.",
+      lighting: "Dark tunnel with faint light ahead."
     },
+
     {
       location: "secret tunnel beneath cabin",
       characters: ["Ethan", "Rescued Girl"],
       objects: ["secret tunnel entrance"],
-      action: "Ethan and the girl move quickly through the tunnel toward daylight.",
-      dialogue: "Keep moving. I can see light.",
-      voiceover: "They hurried through the tunnel, following the faint light ahead.",
-      camera: "Forward-moving tracking shot toward the tunnel exit.",
-      lighting: "Gradually brighter light leading toward the exit."
+      action: "Ethan helps the girl move quickly through the narrow tunnel.",
+      dialogue: "Stay close. We're almost out.",
+      voiceover: "They hurried through the narrow passage toward the distant light.",
+      camera: "Forward tracking shot toward the tunnel exit.",
+      lighting: "Increasing natural light ahead."
     },
+
     {
       location: "nearby forest",
       characters: ["Ethan", "Rescued Girl"],
       objects: [],
       action: "Ethan and the girl emerge from the tunnel and escape into the forest.",
       dialogue: "We made it out!",
-      voiceover: "They finally emerged from the tunnel and escaped into the forest.",
-      camera: "Wide reveal as the pair step into the open forest.",
-      lighting: "Bright early-morning natural light."
+      voiceover: "They finally escaped the cabin and emerged safely into the forest.",
+      camera: "Wide reveal as they step into open daylight.",
+      lighting: "Bright early-morning light."
     },
+
     {
       location: "town at sunrise",
       characters: ["Ethan", "Rescued Girl", "Girl's Family"],
       objects: [],
       action: "At sunrise, Ethan brings the rescued girl safely back to town where her family is waiting.",
       dialogue: "Your family is waiting for you.",
-      voiceover: "At sunrise, Ethan brought the girl safely back to town, where her family was waiting.",
-      camera: "Wide emotional reunion shot followed by a gentle close-up of Ethan watching them reunite.",
-      lighting: "Golden sunrise light with warm cinematic atmosphere."
+      voiceover: "At sunrise, Ethan returned to town with the rescued girl and found her waiting family.",
+      camera: "Wide emotional reunion followed by close-up of Ethan.",
+      lighting: "Golden sunrise cinematic light."
     }
+
   ];
 }
 
-/* =========================
-   GENERIC TIMELINE
-========================= */
+/* =========================================================
+   BUILD PROJECT
+========================================================= */
 
-function genericTimeline(text) {
-  const sentences = splitSentences(text);
+function buildProject(prompt, duration, aspectRatio) {
+  const seconds = durationToSeconds(duration);
+  const totalScenes = sceneCount(seconds);
+  const story = understandStory(prompt);
 
-  return sentences.map((sentence, index) => ({
-    location: "story location",
-    characters: [],
-    objects: [],
-    action: cleanText(sentence),
-    dialogue: index === 0
-      ? "This is where the journey begins."
-      : "We have to keep going.",
-    voiceover: cleanText(sentence),
-    camera: "Cinematic medium shot with natural movement.",
-    lighting: "Cinematic natural lighting."
-  }));
-}
+  const specialStory =
+    prompt.toLowerCase().includes("ethan") &&
+    prompt.toLowerCase().includes("wooden box") &&
+    prompt.toLowerCase().includes("mysterious map") &&
+    prompt.toLowerCase().includes("forest") &&
+    prompt.toLowerCase().includes("cabin") &&
+    prompt.toLowerCase().includes("dangerous man") &&
+    prompt.toLowerCase().includes("secret tunnel");
 
-/* =========================
-   TIMELINE BUILDER
-========================= */
+  let timeline = specialStory
+    ? ethanTimeline()
+    : buildGenericTimeline(prompt, totalScenes);
 
-function buildTimeline(story, requiredScenes) {
-  const special = ethanTimeline(story);
-
-  if (special) {
-    if (requiredScenes <= special.length) {
-      return special.slice(0, requiredScenes);
-    }
-
-    const expanded = [];
-
-    for (const beat of special) {
-      expanded.push({
-        ...beat,
-        action: beat.action
-      });
-
-      if (expanded.length >= requiredScenes) break;
-
-      // Story-specific micro continuation, NOT generic setup/reaction repetition.
-      if (
-        beat.action.toLowerCase().includes("box")
-      ) {
-        expanded.push({
-          ...beat,
-          action: "Ethan examines the old wooden box more carefully before moving on.",
-          dialogue: "There must be a reason this was hidden.",
-          voiceover: "The hidden box made Ethan suspect that the map was part of something much larger.",
-          camera: "Close-up on Ethan examining the box and then the map.",
-          lighting: "Mysterious warm interior light."
-        });
-      } else if (
-        beat.action.toLowerCase().includes("map")
-      ) {
-        expanded.push({
-          ...beat,
-          action: "Ethan folds the map carefully and memorizes the route before leaving.",
-          dialogue: "I won't lose this path.",
-          voiceover: "Before leaving, Ethan carefully memorized the route marked on the map.",
-          camera: "Close-up of Ethan folding the map, then a slow push toward his determined face.",
-          lighting: "Soft morning light."
-        });
-      } else if (
-        beat.action.toLowerCase().includes("forest")
-      ) {
-        expanded.push({
-          ...beat,
-          action: "Ethan pauses among the trees to confirm the cabin's direction.",
-          dialogue: "The cabin has to be nearby.",
-          voiceover: "The deeper Ethan traveled, the closer he came to the place marked on the map.",
-          camera: "Wide forest panorama followed by a medium shot of Ethan checking the route.",
-          lighting: "Filtered daylight through the trees."
-        });
-      } else if (
-        beat.action.toLowerCase().includes("tunnel")
-      ) {
-        expanded.push({
-          ...beat,
-          action: "Ethan helps the frightened girl navigate the narrow tunnel.",
-          dialogue: "Stay close. We've almost reached the exit.",
-          voiceover: "Ethan kept the girl close as they made their way through the dangerous passage.",
-          camera: "Tight tracking shot inside the tunnel.",
-          lighting: "Faint light ahead with deep shadows behind."
-        });
-      }
-    }
-
-    // If extremely long, continue with meaningful aftermath scenes.
-    while (expanded.length < requiredScenes) {
-      const last = expanded[expanded.length - 1];
-
-      expanded.push({
-        ...last,
-        action:
-          "Ethan continues the journey while keeping the rescued girl safe and following the path toward town.",
-        dialogue: "We're almost home.",
-        voiceover:
-          "Ethan stayed focused on getting the rescued girl safely back to town.",
-        camera: "Wide cinematic tracking shot following them toward the distant town.",
-        lighting: "Warm natural daylight."
-      });
-    }
-
-    return expanded.slice(0, requiredScenes);
+  if (totalScenes < timeline.length) {
+    timeline = timeline.slice(0, totalScenes);
   }
 
-  const base = genericTimeline(story);
+  while (timeline.length < totalScenes) {
+    const last = timeline[timeline.length - 1];
 
-  if (requiredScenes <= base.length) {
-    return base.slice(0, requiredScenes);
-  }
-
-  const result = [];
-
-  for (let i = 0; i < requiredScenes; i++) {
-    const source = base[i % base.length];
-
-    result.push({
-      ...source,
+    timeline.push({
+      ...last,
       action:
-        i < base.length
-          ? source.action
-          : `${source.action} The story continues naturally from this moment.`,
+        "The story continues naturally from the previous moment without introducing unrelated elements.",
+      dialogue: "We have to keep moving.",
       voiceover:
-        i < base.length
-          ? source.voiceover
-          : `${source.voiceover} The situation develops further.`
+        "The journey continues naturally toward the next part of the story.",
+      continuity:
+        "Direct continuation from the previous scene."
     });
   }
 
-  return result;
-}
-
-/* =========================
-   SCENE CHARACTER FILTER
-========================= */
-
-function sceneCharacters(beat, storyUnderstanding) {
-  const names = beat.characters || [];
-
-  if (names.length > 0) return names;
-
-  const main = storyUnderstanding.characters.find(
-    c => c.role === "main character"
-  );
-
-  return main ? [main.name] : [];
-}
-
-/* =========================
-   LOCKS
-========================= */
-
-function createCharacterLock(characters) {
-  return characters.map(character => ({
-    name: character.name,
-    role: character.role,
-    permanent_appearance: character.description,
+  const characterLock = story.characters.map(c => ({
+    name: c.name,
+    role: c.role,
+    permanent_appearance: c.description,
     consistency_rule:
-      "Do not change face, age, hairstyle, body proportions, skin tone or clothing between scenes unless the story explicitly requires it."
+      "Keep the exact same face, age, hairstyle, body proportions, skin tone and clothing in every scene."
   }));
-}
 
-function createStoryElementLock(story) {
-  return {
+  const storyElementLock = {
     locations: story.locations,
     objects: story.objects,
     conditions: story.conditions,
-    continuity_rule:
-      "Only use story elements when they belong to the current scene. Do not randomly introduce unrelated objects, vehicles, locations or characters."
+    rule:
+      "Only use locations, props and conditions when they belong to the current scene."
   };
-}
 
-/* =========================
-   BUILD DEMO PROJECT
-========================= */
-
-function buildDemoProject({ prompt, duration, aspectRatio }) {
-  const story = cleanText(prompt);
-  const seconds = durationToSeconds(duration);
-  const totalScenes = createSceneCount(seconds);
-
-  const storyUnderstanding = parseStory(story);
-  const timeline = buildTimeline(story, totalScenes);
-
-  const masterCharacterLock = createCharacterLock(
-    storyUnderstanding.characters
-  );
-
-  const storyElementLock = createStoryElementLock(
-    storyUnderstanding
-  );
-
-  const scenes = [];
-
-  for (let i = 0; i < totalScenes; i++) {
-    const beat = timeline[i] || timeline[timeline.length - 1];
-
-    const start = i * 10;
+  const scenes = timeline.map((beat, index) => {
+    const start = index * 10;
     const end = start + 10;
 
-    const chars = sceneCharacters(
-      beat,
-      storyUnderstanding
-    );
-
-    const characterText =
-      chars.length > 0
-        ? chars.join(", ")
-        : "only characters required by the current action";
-
-    const objectText =
-      beat.objects && beat.objects.length > 0
+    const props =
+      beat.objects && beat.objects.length
         ? beat.objects.join(", ")
         : "no special prop";
 
-    const visualPrompt =
-      `Cinematic ${aspectRatio} scene. ` +
-      `${beat.action} ` +
-      `Characters present: ${characterText}. ` +
-      `Relevant props: ${objectText}. ` +
-      `Maintain exact character continuity and realistic natural movement. ` +
-      `Do not add unrelated characters, vehicles or objects.`;
+    const chars =
+      beat.characters && beat.characters.length
+        ? beat.characters.join(", ")
+        : "only characters required by the action";
 
-    scenes.push({
-      scene_number: i + 1,
+    return {
+      scene_number: index + 1,
       start_time: start,
       end_time: end,
-      visual_prompt: visualPrompt,
+
+      visual_prompt:
+        `Cinematic ${aspectRatio} scene. ${beat.action} ` +
+        `Characters present: ${chars}. ` +
+        `Relevant props: ${props}. ` +
+        `Maintain exact character continuity, realistic movement and natural facial expressions. ` +
+        `Do not add unrelated characters, vehicles or objects.`,
+
       camera: beat.camera,
       lighting: beat.lighting,
       action: beat.action,
       dialogue: beat.dialogue,
       voiceover: beat.voiceover,
-      characters: chars,
-      location: beat.location,
-      objects: beat.objects || [],
+
       continuity:
-        i === 0
+        index === 0
           ? `Opening state: ${beat.action}`
-          : `Continue directly from Scene ${i}. Previous action naturally leads into: ${beat.action}`
-    });
-  }
+          : `Continue directly from Scene ${index}. The previous action naturally leads into: ${beat.action}`,
+
+      characters: beat.characters || [],
+      location: beat.location,
+      objects: beat.objects || []
+    };
+  });
 
   return {
     duration: seconds,
     total_scenes: totalScenes,
     aspect_ratio: aspectRatio,
     mode: "demo",
+
     story_understanding: {
-      characters: storyUnderstanding.characters,
-      locations: storyUnderstanding.locations,
-      objects: storyUnderstanding.objects,
-      conditions: storyUnderstanding.conditions,
-      goal: storyUnderstanding.goal,
-      conflict: storyUnderstanding.conflict,
-      climax: storyUnderstanding.climax,
-      resolution: storyUnderstanding.resolution
+      characters: story.characters,
+      locations: story.locations,
+      objects: story.objects,
+      conditions: story.conditions,
+      goal: story.goal,
+      conflict: story.conflict,
+      climax: story.climax,
+      resolution: story.resolution
     },
-    master_character_lock: masterCharacterLock,
+
+    master_character_lock: characterLock,
     story_element_lock: storyElementLock,
+
     scenes
   };
 }
 
-/* =========================
-   ROUTES
-========================= */
+/* =========================================================
+   GENERIC STORY FALLBACK
+========================================================= */
 
-app.get("/", (req, res) => {
-  res.send("SANAPTAI V12 is running.");
-});
+function buildGenericTimeline(prompt, totalScenes) {
+  const sentences = cleanText(prompt)
+    .split(/(?<=[.!?])\s+/)
+    .filter(Boolean);
 
-app.get("/api/test", (req, res) => {
-  res.json({
-    ok: true,
-    version: "V12",
-    message: "SANAPTAI V12 server is working."
-  });
-});
+  const result = [];
 
-/* =========================
-   DEMO MODE
-   NO GEMINI
-========================= */
+  for (let i = 0; i < totalScenes; i++) {
+    const sentence = sentences[i % sentences.length] || prompt;
+
+    result.push({
+      location: "story location",
+      characters: [],
+      objects: [],
+      action: sentence,
+      dialogue:
+        i === 0
+          ? "This is where the journey begins."
+          : "We have to keep moving.",
+      voiceover: sentence,
+      camera: "Cinematic medium tracking shot.",
+      lighting: "Natural cinematic lighting."
+    });
+  }
+
+  return result;
+}
+
+/* =========================================================
+   DEMO API — NO GEMINI
+========================================================= */
 
 app.post("/api/demo-project", (req, res) => {
   try {
@@ -898,15 +732,15 @@ app.post("/api/demo-project", (req, res) => {
       });
     }
 
-    const project = buildDemoProject({
+    const project = buildProject(
       prompt,
       duration,
-      aspectRatio: aspectRatio || "16:9"
-    });
+      aspectRatio || "16:9"
+    );
 
     res.json(project);
   } catch (error) {
-    console.error("Demo project error:", error);
+    console.error(error);
 
     res.status(500).json({
       error: "Project creation failed.",
@@ -915,9 +749,9 @@ app.post("/api/demo-project", (req, res) => {
   }
 });
 
-/* =========================
-   GEMINI AI MODE
-========================= */
+/* =========================================================
+   GEMINI API
+========================================================= */
 
 app.post("/api/plan-scenes", async (req, res) => {
   try {
@@ -933,72 +767,45 @@ app.post("/api/plan-scenes", async (req, res) => {
       aspectRatio
     } = req.body || {};
 
-    if (!prompt || !String(prompt).trim()) {
-      return res.status(400).json({
-        error: "Prompt is required."
-      });
-    }
-
     const seconds = durationToSeconds(duration);
-    const totalScenes = createSceneCount(seconds);
+    const totalScenes = sceneCount(seconds);
     const ratio = aspectRatio || "16:9";
 
-    const systemPrompt = `
-You are SANAPTAI Story Engine V12.
+    const instruction = `
+You are SANAPTAI V12.1 Story Engine.
 
-Convert the user's story into exactly ${totalScenes} scenes.
+Create exactly ${totalScenes} scenes from the user's story.
 
-STRICT RULES:
-1. Every scene is exactly 10 seconds.
-2. Follow the story chronologically from beginning to ending.
-3. Do not repeat the same event merely to fill time.
-4. Every scene must contain a distinct meaningful action.
-5. Preserve character identity and appearance.
-6. Never invent unrelated characters, vehicles, locations or props.
-7. Dialogue must be short enough to speak naturally within 10 seconds.
-8. Voiceover must match the scene.
-9. Camera and lighting must fit the scene.
-10. If the story is long, expand it with meaningful story-specific micro-actions.
-11. Do not replace a rescued/supporting girl with the main character.
-12. Output valid JSON only.
+Every scene must be exactly 10 seconds.
 
-JSON shape:
+Rules:
+- Follow the complete story chronologically.
+- Do not repeat the same event just to fill time.
+- Every scene must contain a meaningful distinct action.
+- Preserve character identity and appearance.
+- Keep supporting characters separate from the main character.
+- Do not invent unrelated objects or vehicles.
+- Dialogue must fit naturally inside 10 seconds.
+- Voiceover must match the scene.
+- Camera and lighting must match the location and action.
+- For long stories, create meaningful micro-actions rather than generic setup/reaction repetition.
+
+Return JSON only:
+
 {
   "duration": ${seconds},
   "total_scenes": ${totalScenes},
   "aspect_ratio": "${ratio}",
-  "scenes": [
-    {
-      "scene_number": 1,
-      "start_time": 0,
-      "end_time": 10,
-      "visual_prompt": "",
-      "camera": "",
-      "lighting": "",
-      "action": "",
-      "dialogue": "",
-      "voiceover": "",
-      "continuity": ""
-    }
-  ]
+  "scenes": []
 }
+
+USER STORY:
+${cleanText(prompt)}
 `;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text:
-                systemPrompt +
-                "\n\nUSER STORY:\n" +
-                cleanText(prompt)
-            }
-          ]
-        }
-      ]
+      contents: instruction
     });
 
     const raw = response.text || "";
@@ -1008,11 +815,9 @@ JSON shape:
       .replace(/```/g, "")
       .trim();
 
-    const parsed = JSON.parse(cleaned);
-
-    res.json(parsed);
+    res.json(JSON.parse(cleaned));
   } catch (error) {
-    console.error("Gemini planning error:", error);
+    console.error("Gemini error:", error);
 
     res.status(500).json({
       error: "AI scene planning failed.",
@@ -1021,9 +826,9 @@ JSON shape:
   }
 });
 
-/* =========================
+/* =========================================================
    CREATE PROJECT
-========================= */
+========================================================= */
 
 app.post("/api/create-project", async (req, res) => {
   try {
@@ -1047,33 +852,57 @@ app.post("/api/create-project", async (req, res) => {
         });
       }
 
-      const response = await fetch(
-        `https://sanaptai.onrender.com/api/plan-scenes`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            prompt,
-            duration,
-            aspectRatio
-          })
-        }
-      );
+      const seconds = durationToSeconds(duration);
+      const totalScenes = sceneCount(seconds);
 
-      const data = await response.json();
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: `
+Create exactly ${totalScenes} chronological 10-second scenes for this story.
 
-      return res.status(response.status).json(data);
+Story:
+${cleanText(prompt)}
+
+Aspect ratio: ${aspectRatio || "16:9"}
+
+Return JSON only with:
+duration,
+total_scenes,
+aspect_ratio,
+scenes.
+
+Each scene must contain:
+scene_number,
+start_time,
+end_time,
+visual_prompt,
+camera,
+lighting,
+action,
+dialogue,
+voiceover,
+continuity.
+`
+      });
+
+      const raw = response.text || "";
+
+      const cleaned = raw
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+
+      return res.json(JSON.parse(cleaned));
     }
 
-    const project = buildDemoProject({
-      prompt,
-      duration,
-      aspectRatio: aspectRatio || "16:9"
-    });
+    return res.json(
+      buildProject(
+        prompt,
+        duration,
+        aspectRatio || "16:9"
+      )
+    );
 
-    res.json(project);
   } catch (error) {
     console.error("Create project error:", error);
 
@@ -1084,10 +913,22 @@ app.post("/api/create-project", async (req, res) => {
   }
 });
 
-/* =========================
-   START SERVER
-========================= */
+/* =========================================================
+   TEST
+========================================================= */
+
+app.get("/api/test", (req, res) => {
+  res.json({
+    ok: true,
+    version: "V12.1",
+    message: "SANAPTAI V12.1 server is working."
+  });
+});
+
+/* =========================================================
+   SERVER
+========================================================= */
 
 app.listen(PORT, () => {
-  console.log(`SANAPTAI V12 running on port ${PORT}`);
+  console.log(`SANAPTAI V12.1 running on port ${PORT}`);
 });
