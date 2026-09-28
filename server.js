@@ -74,7 +74,11 @@ app.post('/api/plan-scenes', async (req, res) => {
     const totalSeconds = Number(duration) || 10;
     const sceneDuration = 10;
     const totalScenes = Math.ceil(totalSeconds / sceneDuration);
-
+if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({
+        error: 'Gemini API key is not configured'
+    });
+}
     try {
 
         const response = await ai.models.generateContent({
