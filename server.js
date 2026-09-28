@@ -225,10 +225,17 @@ JSON FORMAT:
 
         console.error('Gemini Error:', error);
 
-        res.status(500).json({
-            error: 'Gemini scene planning failed',
-            details: error.message
-        });
+if (error?.status === 429 || error?.code === 429) {
+    return res.status(429).json({
+        error: 'Gemini quota exceeded',
+        message: 'Gemini free-tier limit reached. Please wait and try again later.'
+    });
+}
+
+res.status(500).json({
+    error: 'Gemini scene planning failed',
+    details: error.message
+});
     }
 });
 
