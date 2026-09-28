@@ -117,21 +117,55 @@ IMPORTANT CHARACTER CONSISTENCY RULES:
 - character position
 - story events
 
-DIALOGUE AND VOICEOVER RULES:
+SCENE INTELLIGENCE RULES:
 
 - Every scene is exactly 10 seconds.
-- Dialogue must be short enough to be spoken naturally within the same 10-second scene.
-- Maximum dialogue length: approximately 18 words per scene.
-- Do not force dialogue into every scene.
-- Use dialogue only when the character is actually speaking.
-- If the character is silent, use an empty string for dialogue.
-- Voiceover should be used only when narration is needed.
-- Voiceover must also fit naturally within 10 seconds.
-- Never repeat the same dialogue across scenes.
-- Dialogue must match the character's emotion and current action.
-- Dialogue must logically continue the story.
-- Do not put dialogue inside the visual prompt.
-- Keep dialogue and voiceover in separate JSON fields.
+- Every scene must logically continue from the previous scene.
+- Never restart the story in a new scene.
+- Maintain the same character identity and Character Lock throughout.
+- Maintain continuity of location, time, weather, lighting, props, clothing, and character position.
+
+For every scene, create:
+
+1. VISUAL PROMPT
+- Detailed cinematic visual description.
+- Include character appearance from the Character Lock.
+- Describe the environment and important objects.
+- Describe the character's current action and emotion.
+
+2. CAMERA
+- Specify the camera shot, such as wide shot, medium shot, close-up, or over-the-shoulder.
+- Specify camera movement, such as tracking, dolly, pan, tilt, push-in, or static.
+- Camera movement must fit the action.
+
+3. LIGHTING
+- Describe the lighting appropriate to the environment and mood.
+- Maintain lighting continuity between connected scenes.
+
+4. ACTION
+- Clearly describe what the character does during the 10-second scene.
+- The action must be physically realistic and complete within 10 seconds.
+
+5. DIALOGUE
+- Use dialogue only when a character is actually speaking.
+- Maximum approximately 18 spoken words per scene.
+- Dialogue must fit naturally within 10 seconds.
+- Never repeat dialogue.
+- If nobody speaks, use an empty string.
+
+6. VOICEOVER
+- Use voiceover only when narration is useful.
+- Keep voiceover short enough to fit naturally within 10 seconds.
+- Do not repeat information already clearly communicated by dialogue.
+- If no voiceover is needed, use an empty string.
+
+7. CONTINUITY
+- Check the previous scene before creating the next scene.
+- The next scene must begin from the physical and emotional state established by the previous scene.
+
+Do not put dialogue, voiceover, camera instructions, or technical notes inside the visual prompt.
+
+Return all information in the JSON fields specified below.
 
 Return ONLY valid JSON.
 
