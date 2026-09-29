@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 10000;
 
-const ENGINE_VERSION = "V28";
+const ENGINE_VERSION = "V29";
 const DEMO_MODE = true;
 const GEMINI_ENABLED = false;
 const SCENE_DURATION = 10;
@@ -19,9 +19,9 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// --------------------------------------------------
+// ==================================================
 // CHARACTER LOCKS
-// --------------------------------------------------
+// ==================================================
 
 const CHARACTER_LOCKS = {
   Noah:
@@ -37,9 +37,9 @@ const CHARACTER_LOCKS = {
     "Professional coastal rescue crew wearing bright weatherproof rescue jackets and safety gear. Keep their appearance consistent."
 };
 
-// --------------------------------------------------
-// NOAH ATOMIC STORY EVENTS
-// --------------------------------------------------
+// ==================================================
+// ATOMIC NOAH EVENTS
+// ==================================================
 
 const NOAH_EVENTS = [
   {
@@ -82,7 +82,7 @@ const NOAH_EVENTS = [
   },
   {
     id: "N06",
-    type: "decision",
+    type: "realization",
     location: "Father's Workshop",
     action: "Noah realizes the warning could put the town in danger.",
     characters: ["Noah"]
@@ -269,14 +269,8 @@ const NOAH_EVENTS = [
   }
 ];
 
-// --------------------------------------------------
-// HELPERS
-// --------------------------------------------------
-
-function cleanText(value) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
+function getEvent(id) {
+  return NOAH_EVENTS.find((event) => event.id === id);
 }
 
 function unique(values) {
@@ -284,12 +278,9 @@ function unique(values) {
 }
 
 function sceneTimes(sceneNumber) {
-  const start = (sceneNumber - 1) * SCENE_DURATION;
-  const end = start + SCENE_DURATION;
-
   return {
-    start_time: `${start}s`,
-    end_time: `${end}s`
+    start_time: `${(sceneNumber - 1) * 10}s`,
+    end_time: `${sceneNumber * 10}s`
   };
 }
 
@@ -303,193 +294,137 @@ function isNoahStory(prompt) {
   );
 }
 
-// --------------------------------------------------
-// V28 — EXACT 6-SCENE NOAH PLAN
-// --------------------------------------------------
+// ==================================================
+// V29 — 10 SECOND SCENE BUDGET
+// ==================================================
 
 function createNoah60Plan() {
   return [
     {
       scene: 1,
-      main: "N03",
-      support: ["N04"]
+      events: ["N03", "N04"],
+      location: "Father's Workshop"
     },
+
     {
       scene: 2,
-      main: "N08",
-      support: ["N05", "N09"]
+      events: ["N08", "N09"],
+      location: "Coastal Town"
     },
+
     {
       scene: 3,
-      main: "N10",
-      support: ["N11", "N12", "N14"]
+      events: ["N10", "N11", "N12", "N14"],
+      location: "Coastal Town"
     },
+
     {
       scene: 4,
-      main: "N19",
-      support: ["N20"]
+      events: ["N16", "N17", "N18", "N19", "N20"],
+      location: "Lighthouse Signal Room"
     },
+
     {
       scene: 5,
-      main: "N22",
-      support: ["N23", "N24"]
+      events: ["N21", "N22", "N23", "N24", "N25"],
+      location: "Lighthouse Signal Room"
     },
+
     {
       scene: 6,
-      main: "N28",
-      support: ["N29", "N30"]
+      events: ["N26", "N27", "N28"],
+      location: "Harbor"
     }
   ];
 }
 
-// --------------------------------------------------
-// EVENT LOOKUP
-// --------------------------------------------------
+// ==================================================
+// ACTION BUDGET
+// ==================================================
 
-function getEvent(id) {
-  return NOAH_EVENTS.find((event) => event.id === id);
+function createSceneAction(sceneNumber) {
+  const actions = {
+    1:
+      "Noah discovers an old lighthouse journal on the workbench and opens it to read.",
+
+    2:
+      "Noah warns the villagers about the powerful storm, but they doubt his warning.",
+
+    3:
+      "Dark clouds gather, strong wind and rain reach the town, and Noah notices the lighthouse signal has stopped working.",
+
+    4:
+      "Noah reaches the lighthouse signal room and examines the damaged mechanism.",
+
+    5:
+      "Noah prepares his tools, repairs the damaged mechanism, and restores the lighthouse signal.",
+
+    6:
+      "The rescue boat follows the restored signal and reaches the harbor safely."
+  };
+
+  return actions[sceneNumber];
 }
 
-// --------------------------------------------------
-// SCENE LOCATION ENGINE
-// --------------------------------------------------
-
-function getSceneLocation(mainEvent, supportEvents) {
-  const type = mainEvent.type;
-
-  if (mainEvent.id === "N08" || mainEvent.id === "N09") {
-    return "Coastal Town";
-  }
-
-  if (
-    mainEvent.id === "N10" ||
-    mainEvent.id === "N14" ||
-    mainEvent.id === "N15"
-  ) {
-    return "Coastal Town";
-  }
-
-  if (
-    mainEvent.id === "N19" ||
-    mainEvent.id === "N20" ||
-    mainEvent.id === "N21" ||
-    mainEvent.id === "N22" ||
-    mainEvent.id === "N23" ||
-    mainEvent.id === "N24"
-  ) {
-    return "Lighthouse Signal Room";
-  }
-
-  if (mainEvent.id === "N28") {
-    return "Harbor";
-  }
-
-  if (mainEvent.id === "N29" || mainEvent.id === "N30") {
-    return "Coastal Town";
-  }
-
-  if (type === "movement") {
-    return mainEvent.location;
-  }
-
-  return mainEvent.location;
-}
-
-// --------------------------------------------------
+// ==================================================
 // CAMERA ENGINE
-// --------------------------------------------------
+// ==================================================
 
-function cameraFor(mainEvent, sceneNumber) {
-  switch (mainEvent.type) {
-    case "discovery":
-      return "Slow cinematic push-in from a medium shot to a close-up of the important object.";
+function cameraFor(sceneNumber) {
+  const cameras = {
+    1:
+      "Slow cinematic push-in from a medium shot to a close-up of the lighthouse journal.",
 
-    case "warning":
-      return "Medium shot on the main character speaking, followed by a brief reaction shot of the people listening.";
+    2:
+      "Medium shot of Noah warning the villagers, followed by brief reaction shots showing their doubt.",
 
-    case "conflict":
-      return "Medium-wide reaction shot showing the main character facing the doubtful villagers.";
+    3:
+      "Wide establishing shot of the storm approaching, followed by a close-up of Noah looking toward the dark lighthouse.",
 
-    case "realization":
-      return "Focused cinematic close-up on the main character's reaction, followed by a view of the important story detail.";
+    4:
+      "Smooth tracking shot as Noah reaches the signal room, followed by a tight inspection close-up of the damaged mechanism.",
 
-    case "decision":
-      return "Medium close-up showing the main character making a determined decision.";
+    5:
+      "Tight close-up of Noah's hands repairing the mechanism, followed by a dramatic reveal of the lighthouse beam turning back on.",
 
-    case "movement":
-      return "Smooth cinematic tracking shot following the main character's movement.";
+    6:
+      "Wide cinematic harbor shot showing the rescue boat arriving safely beneath the restored lighthouse beam."
+  };
 
-    case "action":
-      return "Tight cinematic close-up focused on the character's hands performing the physical task.";
-
-    case "climax":
-      return "Dramatic close-up followed by a wider reveal showing the restored lighthouse signal.";
-
-    case "rescue":
-      return "Wide cinematic shot clearly showing the rescue boat moving safely toward the harbor.";
-
-    case "resolution":
-      return "Wide emotional cinematic shot showing the characters together after the danger has passed.";
-
-    default:
-      return "Natural cinematic medium shot with controlled camera movement.";
-  }
+  return cameras[sceneNumber];
 }
 
-// --------------------------------------------------
+// ==================================================
 // LIGHTING ENGINE
-// --------------------------------------------------
+// ==================================================
 
-function lightingFor(mainEvent, supportEvents, sceneNumber) {
-  const allText = [
-    mainEvent.action,
-    ...supportEvents.map((event) => event.action)
-  ]
-    .join(" ")
-    .toLowerCase();
+function lightingFor(sceneNumber) {
+  const lighting = {
+    1:
+      "Natural calm morning daylight entering the workshop through the windows.",
 
-  if (mainEvent.id === "N03" || mainEvent.id === "N04") {
-    return "Natural calm morning daylight entering the workshop through the windows.";
-  }
+    2:
+      "Overcast daytime lighting with the first visible signs of approaching storm clouds.",
 
-  if (mainEvent.id === "N08") {
-    return "Overcast daytime lighting with the first signs of approaching storm clouds.";
-  }
+    3:
+      "Darkening overcast daylight with strong wind, rain and realistic wet environmental reflections.",
 
-  if (mainEvent.id === "N10") {
-    return "Darkening overcast daylight as storm clouds gather over the coastal town.";
-  }
+    4:
+      "Dark storm lighting inside the lighthouse with cool ambient light entering from the storm outside.",
 
-  if (
-    mainEvent.id === "N22" ||
-    mainEvent.id === "N23" ||
-    mainEvent.id === "N24"
-  ) {
-    return "Dark storm lighting with strong contrast, rain visible outside, and realistic wet reflections.";
-  }
+    5:
+      "Dark storm lighting with strong contrast, rain visible outside and the restored lighthouse beam creating a dramatic glow.",
 
-  if (mainEvent.id === "N28") {
-    return "Soft early morning light after the storm, with calm water and a peaceful atmosphere.";
-  }
+    6:
+      "Soft early morning light after the storm, calm water and a peaceful atmosphere."
+  };
 
-  if (mainEvent.id === "N29" || mainEvent.id === "N30") {
-    return "Warm golden morning light after the storm, creating a calm emotional atmosphere.";
-  }
-
-  if (
-    allText.includes("storm") ||
-    allText.includes("rain") ||
-    allText.includes("wind")
-  ) {
-    return "Dark overcast storm lighting with realistic rain, strong natural contrast, and wet environmental reflections.";
-  }
-
-  return "Natural cinematic daytime lighting appropriate to the current story moment.";
+  return lighting[sceneNumber];
 }
 
-// --------------------------------------------------
-// DIALOGUE ENGINE
-// --------------------------------------------------
+// ==================================================
+// DIALOGUE
+// ==================================================
 
 function dialogueFor(sceneNumber) {
   const dialogue = {
@@ -501,66 +436,42 @@ function dialogueFor(sceneNumber) {
     6: "They're safe."
   };
 
-  return dialogue[sceneNumber] || "";
+  return dialogue[sceneNumber];
 }
 
-// --------------------------------------------------
-// VOICEOVER ENGINE
-// --------------------------------------------------
+// ==================================================
+// VOICEOVER
+// ==================================================
 
 function voiceoverFor(sceneNumber) {
   const voiceover = {
-    1: "Noah discovers an old lighthouse journal in his father's workshop.",
-    2: "The journal warns Noah about a powerful storm, so he rushes to warn the villagers.",
-    3: "The villagers doubt him as the storm grows stronger and the lighthouse signal fails.",
-    4: "Noah reaches the lighthouse and examines the damaged signal mechanism.",
-    5: "Working quickly through the storm, Noah repairs the signal and restores its light.",
-    6: "The rescue boat reaches the harbor safely, and by morning the grateful villagers thank Noah."
+    1:
+      "Noah discovers an old lighthouse journal in his father's workshop.",
+
+    2:
+      "The warning sends Noah to the villagers, but they refuse to believe him.",
+
+    3:
+      "The storm intensifies, and Noah realizes the lighthouse signal has failed.",
+
+    4:
+      "Noah reaches the lighthouse and finds the signal mechanism damaged.",
+
+    5:
+      "Noah works quickly to repair the signal and restore its guiding light.",
+
+    6:
+      "The rescue boat safely reaches the harbor beneath the restored lighthouse beam."
   };
 
-  return voiceover[sceneNumber] || "";
+  return voiceover[sceneNumber];
 }
 
-// --------------------------------------------------
-// ACTION ENGINE
-// --------------------------------------------------
-
-function createSceneAction(mainEvent, supportEvents, sceneNumber) {
-  if (sceneNumber === 1) {
-    return "Noah discovers an old lighthouse journal on the workbench and opens it to read.";
-  }
-
-  if (sceneNumber === 2) {
-    return "Noah warns the villagers about the powerful storm, but they doubt his warning.";
-  }
-
-  if (sceneNumber === 3) {
-    return "Dark clouds gather, strong wind and rain reach the town, and Noah notices the lighthouse signal has stopped working.";
-  }
-
-  if (sceneNumber === 4) {
-    return "Noah reaches the lighthouse signal room and carefully examines the damaged mechanism.";
-  }
-
-  if (sceneNumber === 5) {
-    return "Noah repairs the damaged signal mechanism, and the lighthouse beam turns back on through the storm.";
-  }
-
-  if (sceneNumber === 6) {
-    return "The rescue boat reaches the harbor safely, and by morning the villagers thank Noah for helping save the town.";
-  }
-
-  return cleanText(
-    [mainEvent.action, ...supportEvents.map((event) => event.action)].join(" ")
-  );
-}
-
-// --------------------------------------------------
+// ==================================================
 // VISUAL PROMPT
-// --------------------------------------------------
+// ==================================================
 
 function createVisualPrompt({
-  sceneNumber,
   location,
   characters,
   objects,
@@ -574,7 +485,7 @@ function createVisualPrompt({
 
   const objectText = objects.length
     ? `Important visible objects: ${objects.join(", ")}.`
-    : "No unnecessary props.";
+    : "Show only necessary story elements.";
 
   return [
     "Cinematic live-action movie scene.",
@@ -585,7 +496,7 @@ function createVisualPrompt({
     `Camera: ${camera}`,
     `Lighting: ${lighting}`,
     "Realistic human movement, believable physics, natural facial expressions, cinematic depth of field, detailed environment, realistic weather and atmosphere.",
-    "Keep the story visually continuous with the previous scene.",
+    "Maintain exact visual continuity with previous scenes.",
     "Only show elements relevant to this scene.",
     "No unrelated characters.",
     "No unrelated props.",
@@ -596,46 +507,36 @@ function createVisualPrompt({
   ].join(" ");
 }
 
-// --------------------------------------------------
+// ==================================================
 // BUILD NOAH SCENES
-// --------------------------------------------------
+// ==================================================
 
 function buildNoahScenes() {
   const plan = createNoah60Plan();
 
-  return plan.map((item) => {
-    const mainEvent = getEvent(item.main);
-    const supportEvents = item.support.map(getEvent).filter(Boolean);
+  return plan.map((scenePlan) => {
+    const sceneNumber = scenePlan.scene;
 
-    const sceneNumber = item.scene;
-    const location = getSceneLocation(mainEvent, supportEvents);
+    const events = scenePlan.events
+      .map(getEvent)
+      .filter(Boolean);
 
-    const characters = unique([
-      ...mainEvent.characters,
-      ...supportEvents.flatMap((event) => event.characters || [])
-    ]);
+    const mainEvent = events[0];
 
-    const objects = unique([
-      ...(mainEvent.objects || []),
-      ...supportEvents.flatMap((event) => event.objects || [])
-    ]);
-
-    const action = createSceneAction(
-      mainEvent,
-      supportEvents,
-      sceneNumber
+    const characters = unique(
+      events.flatMap((event) => event.characters || [])
     );
 
-    const camera = cameraFor(mainEvent, sceneNumber);
-    const lighting = lightingFor(
-      mainEvent,
-      supportEvents,
-      sceneNumber
+    const objects = unique(
+      events.flatMap((event) => event.objects || [])
     );
+
+    const action = createSceneAction(sceneNumber);
+    const camera = cameraFor(sceneNumber);
+    const lighting = lightingFor(sceneNumber);
 
     const visualPrompt = createVisualPrompt({
-      sceneNumber,
-      location,
+      location: scenePlan.location,
       characters,
       objects,
       action,
@@ -649,70 +550,61 @@ function buildNoahScenes() {
       scene_number: sceneNumber,
       start_time: times.start_time,
       end_time: times.end_time,
+
       visual_prompt: visualPrompt,
+
       camera,
       lighting,
+
       action,
+
       dialogue: dialogueFor(sceneNumber),
+
       voiceover: voiceoverFor(sceneNumber),
+
       continuity:
-        "Keep the exact same character face, age, hairstyle, body proportions, clothing and important story objects consistent with previous scenes."
+        "Keep the exact same character face, age, hairstyle, body proportions, clothing and important story objects consistent throughout the entire video."
     };
   });
 }
 
-// --------------------------------------------------
+// ==================================================
 // GENERIC STORY ENGINE
-// --------------------------------------------------
+// ==================================================
 
-function extractGenericEvents(prompt) {
-  const sentences = cleanText(prompt)
+function buildGenericScenes(prompt, requiredScenes) {
+  const sentences = String(prompt || "")
+    .replace(/\s+/g, " ")
     .split(/(?<=[.!?])\s+/)
     .filter(Boolean);
 
-  return sentences.map((sentence, index) => ({
-    id: `G${String(index + 1).padStart(2, "0")}`,
-    type:
-      index === 0
-        ? "setup"
-        : index === sentences.length - 1
-        ? "resolution"
-        : "action",
-    location: "Story Environment",
-    action: sentence,
-    characters: ["Main Character"],
-    objects: []
-  }));
-}
-
-function buildGenericScenes(prompt, requiredScenes) {
-  const events = extractGenericEvents(prompt);
-
-  if (!events.length) {
+  if (!sentences.length) {
     return [];
   }
 
   const scenes = [];
 
   for (let i = 0; i < requiredScenes; i++) {
-    const eventIndex = Math.min(
-      Math.floor((i * events.length) / requiredScenes),
-      events.length - 1
+    const index = Math.min(
+      Math.floor((i * sentences.length) / requiredScenes),
+      sentences.length - 1
     );
 
-    const event = events[eventIndex];
+    const action = sentences[index];
 
     const times = sceneTimes(i + 1);
 
-    const camera = cameraFor(event, i + 1);
-    const lighting = lightingFor(event, [], i + 1);
+    const camera =
+      "Natural cinematic camera movement appropriate to the current action.";
+
+    const lighting =
+      "Natural cinematic lighting appropriate to the current story moment.";
 
     const visualPrompt = createVisualPrompt({
-      sceneNumber: i + 1,
-      location: event.location,
-      characters: event.characters,
-      objects: event.objects,
-      action: event.action,
+      location: "Story Environment",
+      characters: ["Main Character"],
+      objects: [],
+      action,
       camera,
       lighting
     });
@@ -724,9 +616,9 @@ function buildGenericScenes(prompt, requiredScenes) {
       visual_prompt: visualPrompt,
       camera,
       lighting,
-      action: event.action,
+      action,
       dialogue: "",
-      voiceover: event.action,
+      voiceover: action,
       continuity:
         "Maintain consistent character identity, appearance, clothing, environment and story objects throughout the video."
     });
@@ -735,42 +627,59 @@ function buildGenericScenes(prompt, requiredScenes) {
   return scenes;
 }
 
-// --------------------------------------------------
-// VALIDATION
-// --------------------------------------------------
+// ==================================================
+// VALIDATION ENGINE
+// ==================================================
 
 function validateScenes(scenes, duration) {
-  const expectedScenes = Math.floor(duration / SCENE_DURATION);
+  const expectedScenes = duration / SCENE_DURATION;
 
   if (scenes.length !== expectedScenes) {
     throw new Error(
-      `Scene count mismatch. Expected ${expectedScenes}, received ${scenes.length}.`
+      `Expected ${expectedScenes} scenes but received ${scenes.length}.`
     );
   }
 
   for (let i = 0; i < scenes.length; i++) {
-    const expectedStart = `${i * SCENE_DURATION}s`;
-    const expectedEnd = `${(i + 1) * SCENE_DURATION}s`;
+    const expectedStart = `${i * 10}s`;
+    const expectedEnd = `${(i + 1) * 10}s`;
 
     if (
       scenes[i].start_time !== expectedStart ||
       scenes[i].end_time !== expectedEnd
     ) {
-      throw new Error(`Invalid timing in scene ${i + 1}.`);
+      throw new Error(`Invalid timing in Scene ${i + 1}.`);
+    }
+
+    if (!scenes[i].visual_prompt) {
+      throw new Error(`Missing visual prompt in Scene ${i + 1}.`);
+    }
+
+    if (!scenes[i].action) {
+      throw new Error(`Missing action in Scene ${i + 1}.`);
     }
   }
 
   return true;
 }
 
-// --------------------------------------------------
+// ==================================================
 // PROJECT CREATOR
-// --------------------------------------------------
+// ==================================================
 
 function createProject({ prompt, duration, aspectRatio }) {
   const durationNumber = Number(duration);
 
-  if (![10, 30, 60, 300, 600, 1200].includes(durationNumber)) {
+  const allowedDurations = [
+    10,
+    30,
+    60,
+    300,
+    600,
+    1200
+  ];
+
+  if (!allowedDurations.includes(durationNumber)) {
     throw new Error("Unsupported duration.");
   }
 
@@ -781,11 +690,9 @@ function createProject({ prompt, duration, aspectRatio }) {
   if (isNoahStory(prompt) && durationNumber === 60) {
     scenes = buildNoahScenes();
   } else if (isNoahStory(prompt) && durationNumber === 30) {
-    const full = buildNoahScenes();
-    scenes = full.slice(0, 3);
+    scenes = buildNoahScenes().slice(0, 3);
   } else if (isNoahStory(prompt) && durationNumber === 10) {
-    const full = buildNoahScenes();
-    scenes = full.slice(0, 1);
+    scenes = buildNoahScenes().slice(0, 1);
   } else {
     scenes = buildGenericScenes(prompt, totalScenes);
   }
@@ -804,9 +711,9 @@ function createProject({ prompt, duration, aspectRatio }) {
   };
 }
 
-// --------------------------------------------------
-// API ROUTES
-// --------------------------------------------------
+// ==================================================
+// API
+// ==================================================
 
 app.get("/api/test", (req, res) => {
   res.json({
@@ -883,28 +790,30 @@ app.post("/api/create-project", (req, res) => {
   }
 });
 
-// Gemini deliberately disabled during testing.
+// Gemini अभी intentionally disabled है.
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
     success: false,
     message:
-      "Gemini scene planning is temporarily disabled. SANAPTAI V28 is running in Demo Mode.",
+      "Gemini scene planning is temporarily disabled. SANAPTAI V29 is running in Demo Mode.",
     engine_version: ENGINE_VERSION,
     gemini_enabled: GEMINI_ENABLED
   });
 });
 
-// --------------------------------------------------
+// ==================================================
 // EXPRESS 5 SAFE FALLBACK
-// --------------------------------------------------
+// ==================================================
 
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(
+    path.join(__dirname, "public", "index.html")
+  );
 });
 
-// --------------------------------------------------
-// START SERVER
-// --------------------------------------------------
+// ==================================================
+// START
+// ==================================================
 
 app.listen(PORT, () => {
   console.log(
