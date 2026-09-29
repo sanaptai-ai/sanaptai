@@ -6,396 +6,333 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+app.use(express.static("public"));
 
-const ENGINE_VERSION = "V35.0";
+const ENGINE_VERSION = "V36.0";
 
-const CHARACTERS = {
-  Noah: {
-    name: "Noah",
-    description:
-      "14-year-old boy, slim build, short slightly messy brown hair, blue eyes, navy blue hoodie, dark jeans, white sneakers"
-  },
+const STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "with", "his", "her",
+  "their", "they", "he", "she", "it", "this", "that", "to",
+  "of", "in", "on", "at", "from", "as", "was", "were", "is",
+  "are", "be", "has", "have", "had", "for", "by", "into",
+  "then", "one", "day", "morning", "night"
+]);
 
-  Father: {
-    name: "Noah's father",
-    description:
-      "middle-aged man, short dark hair with some gray, trimmed beard, brown work jacket, dark trousers"
-  },
+function clean(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  Villagers: {
-    name: "Villagers",
-    description:
-      "coastal-town villagers wearing practical everyday clothing"
-  },
+function splitStory(prompt) {
+  return clean(prompt)
+    .replace(/\n+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map(clean)
+    .filter((x) => x.length > 12);
+}
 
-  RescueCrew: {
-    name: "Rescue crew",
-    description:
-      "professional coastal rescue crew wearing bright weatherproof rescue jackets and safety gear"
-  }
-};
+function extractCharacters(prompt) {
+  const names = new Set();
 
-/*
-========================================================
-V35 STORY EVENTS
-========================================================
-Chronological atomic events.
-Each event has:
-- id
-- phase
-- location
-- action
-- importance
-- weight
-*/
-
-function getStoryEvents() {
-  return [
-    {
-      id: "N01",
-      phase: "setup",
-      location: "small coastal town",
-      action: "Noah lives with his father in the coastal town.",
-      importance: 1,
-      weight: 1
-    },
-    {
-      id: "N02",
-      phase: "setup",
-      location: "father's workshop",
-      action: "Noah enters his father's workshop.",
-      importance: 2,
-      weight: 1
-    },
-    {
-      id: "N03",
-      phase: "discovery",
-      location: "father's workshop",
-      action: "Noah discovers an old lighthouse journal.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N04",
-      phase: "discovery",
-      location: "father's workshop",
-      action: "Noah opens the journal and begins reading it.",
-      importance: 3,
-      weight: 1
-    },
-
-    {
-      id: "N05",
-      phase: "warning",
-      location: "father's workshop",
-      action: "The journal warns that a powerful storm is approaching the town.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N06",
-      phase: "warning",
-      location: "father's workshop",
-      action: "Noah realizes the warning could put the coastal town in danger.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N07",
-      phase: "warning_attempt",
-      location: "town square",
-      action: "Noah leaves the workshop and rushes toward the villagers.",
-      importance: 2,
-      weight: 1
-    },
-    {
-      id: "N08",
-      phase: "warning_attempt",
-      location: "town square",
-      action: "Noah warns the villagers about the approaching storm.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N09",
-      phase: "warning_attempt",
-      location: "town square",
-      action: "The villagers dismiss Noah's warning.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N10",
-      phase: "warning_attempt",
-      location: "town square",
-      action: "Noah looks toward the darkening horizon.",
-      importance: 2,
-      weight: 1
-    },
-
-    {
-      id: "N11",
-      phase: "danger",
-      location: "coastal town",
-      action: "Dark storm clouds move rapidly over the coastal town.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N12",
-      phase: "danger",
-      location: "coastal town",
-      action: "Heavy rain begins as the storm reaches the town.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N13",
-      phase: "danger",
-      location: "lighthouse",
-      action: "The lighthouse signal suddenly stops working.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N14",
-      phase: "danger",
-      location: "coastal harbor",
-      action: "Noah realizes boats approaching the harbor could be in danger.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N15",
-      phase: "decision",
-      location: "coastal town",
-      action: "Noah decides to repair the lighthouse signal himself.",
-      importance: 3,
-      weight: 1
-    },
-
-    {
-      id: "N16",
-      phase: "journey",
-      location: "stormy coastal road",
-      action: "Noah runs through the heavy rain toward the lighthouse.",
-      importance: 2,
-      weight: 1
-    },
-    {
-      id: "N17",
-      phase: "journey",
-      location: "lighthouse entrance",
-      action: "Noah reaches the lighthouse entrance.",
-      importance: 2,
-      weight: 1
-    },
-    {
-      id: "N18",
-      phase: "climb",
-      location: "lighthouse staircase",
-      action: "Noah climbs the lighthouse stairs.",
-      importance: 2,
-      weight: 1
-    },
-    {
-      id: "N19",
-      phase: "climb",
-      location: "signal room",
-      action: "Noah enters the lighthouse signal room.",
-      importance: 2,
-      weight: 1
-    },
-    {
-      id: "N20",
-      phase: "inspection",
-      location: "signal room",
-      action: "Noah examines the damaged lighthouse signal mechanism.",
-      importance: 3,
-      weight: 1
-    },
-
-    {
-      id: "N21",
-      phase: "repair",
-      location: "signal room",
-      action: "Noah begins repairing the damaged mechanism.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N22",
-      phase: "repair",
-      location: "signal room",
-      action: "Noah reconnects the damaged components.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N23",
-      phase: "restoration",
-      location: "signal room",
-      action: "The lighthouse mechanism begins moving again.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N24",
-      phase: "restoration",
-      location: "lighthouse",
-      action: "The lighthouse signal turns back on.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N25",
-      phase: "restoration",
-      location: "lighthouse",
-      action: "Noah watches the restored beam sweep across the sea.",
-      importance: 3,
-      weight: 1
-    },
-
-    {
-      id: "N26",
-      phase: "rescue",
-      location: "coastal sea",
-      action: "A rescue boat follows the restored lighthouse beam.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N27",
-      phase: "rescue",
-      location: "harbor",
-      action: "The rescue boat reaches the harbor safely.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N28",
-      phase: "resolution_transition",
-      location: "coastal town",
-      action: "The storm passes and morning arrives.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N29",
-      phase: "resolution",
-      location: "coastal town",
-      action: "The villagers thank Noah for helping save the town.",
-      importance: 3,
-      weight: 1
-    },
-    {
-      id: "N30",
-      phase: "resolution",
-      location: "lighthouse",
-      action: "Noah looks toward the lighthouse as the town returns to safety.",
-      importance: 2,
-      weight: 1
-    }
+  const patterns = [
+    /\b(?:named|called)\s+([A-Z][a-z]+)/g,
+    /\b([A-Z][a-z]{2,})\s+(?:lives|discovers|finds|goes|runs|sees|decides|tries|helps|meets|enters|leaves|opens|repairs|returns)\b/g
   ];
-}
 
-/*
-========================================================
-HELPERS
-========================================================
-*/
+  for (const pattern of patterns) {
+    let match;
 
-function unique(values) {
-  return [...new Set(values.filter(Boolean))];
-}
-
-function cleanText(value) {
-  if (value === null || value === undefined) return "";
-
-  if (typeof value === "string") {
-    return value.trim();
-  }
-
-  if (Array.isArray(value)) {
-    return value
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-  }
-
-  if (typeof value === "object") {
-    return Object.values(value)
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-  }
-
-  return String(value);
-}
-
-function characterText(names) {
-  return unique(names)
-    .map((name) => {
-      const character = CHARACTERS[name];
-
-      if (!character) return "";
-
-      return `${character.name}: ${character.description}`;
-    })
-    .filter(Boolean)
-    .join(" | ");
-}
-
-function objectText(ids) {
-  const objects = [];
-
-  for (const id of ids) {
-    if (["N03", "N04", "N05", "N06"].includes(id)) {
-      objects.push("old lighthouse journal");
-    }
-
-    if (
-      ["N13", "N15", "N20", "N21", "N22", "N23", "N24", "N25"].includes(id)
-    ) {
-      objects.push("lighthouse signal mechanism");
-    }
-
-    if (["N26", "N27"].includes(id)) {
-      objects.push("rescue boat");
+    while ((match = pattern.exec(prompt)) !== null) {
+      if (match[1] && !STOPWORDS.has(match[1].toLowerCase())) {
+        names.add(match[1]);
+      }
     }
   }
 
-  return unique(objects);
+  return [...names];
 }
 
-/*
-========================================================
-CHARACTER ASSIGNMENT
-========================================================
-*/
+function extractLocations(sentences) {
+  const locations = new Set();
 
-function charactersForEvents(events) {
-  const ids = events.map((e) => e.id);
+  const locationWords =
+    /\b(?:town|city|village|house|home|workshop|school|forest|forest|street|road|harbor|harbour|lighthouse|beach|mountain|office|hospital|station|room|castle|farm|island|coast|coastal town)\b/gi;
 
-  const characters = ["Noah"];
+  for (const sentence of sentences) {
+    const matches = sentence.match(locationWords);
 
-  if (ids.includes("N01") || ids.includes("N02")) {
-    characters.push("Father");
+    if (matches) {
+      matches.forEach((m) => locations.add(m.toLowerCase()));
+    }
+  }
+
+  return [...locations];
+}
+
+function detectEventType(sentence) {
+  const s = sentence.toLowerCase();
+
+  if (
+    /lives|grows up|is a|has a family|works as|lives with/.test(s)
+  ) {
+    return "setup";
   }
 
   if (
-    ids.includes("N08") ||
-    ids.includes("N09") ||
-    ids.includes("N29")
+    /discovers|finds|opens|receives|learns|notices|sees|finds out/.test(s)
   ) {
-    characters.push("Villagers");
+    return "discovery";
   }
 
-  if (ids.includes("N26") || ids.includes("N27")) {
-    characters.push("RescueCrew");
+  if (
+    /warning|warns|danger|threat|storm|problem|trouble|dangerous/.test(s)
+  ) {
+    return "warning";
   }
 
-  return unique(characters);
+  if (
+    /tries|attempts|asks|tells|confronts|faces|fails|refuses|rejects/.test(s)
+  ) {
+    return "conflict";
+  }
+
+  if (
+    /decides|chooses|plans|determines|must|will/.test(s)
+  ) {
+    return "decision";
+  }
+
+  if (
+    /runs|walks|travels|goes|returns|reaches|climbs|enters|leaves/.test(s)
+  ) {
+    return "journey";
+  }
+
+  if (
+    /repairs|fixes|builds|fights|rescues|saves|stops|opens|breaks/.test(s)
+  ) {
+    return "action";
+  }
+
+  if (
+    /turns on|starts|works again|restores|returns to normal|safe/.test(s)
+  ) {
+    return "resolution";
+  }
+
+  if (
+    /morning|finally|thank|thanks|saved|survives|ends|after the/.test(s)
+  ) {
+    return "ending";
+  }
+
+  return "story";
+}
+
+function importanceFor(type, sentence) {
+  const s = sentence.toLowerCase();
+
+  if (
+    type === "warning" ||
+    type === "conflict" ||
+    type === "decision" ||
+    type === "action" ||
+    type === "resolution" ||
+    type === "ending"
+  ) {
+    return 3;
+  }
+
+  if (
+    /discovers|finds|reaches|enters|leaves|notices|realizes/.test(s)
+  ) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function extractEvents(sentences) {
+  return sentences.map((sentence, index) => {
+    const type = detectEventType(sentence);
+
+    return {
+      id: `E${String(index + 1).padStart(2, "0")}`,
+      order: index + 1,
+      phase: type,
+      action: sentence,
+      importance: importanceFor(type, sentence),
+      location: guessLocation(sentence),
+      weight: type === "action" || type === "conflict" ? 2 : 1
+    };
+  });
+}
+
+function guessLocation(sentence) {
+  const s = sentence.toLowerCase();
+
+  const locations = [
+    "lighthouse",
+    "workshop",
+    "harbor",
+    "harbour",
+    "town",
+    "village",
+    "city",
+    "house",
+    "home",
+    "school",
+    "forest",
+    "street",
+    "road",
+    "beach",
+    "mountain",
+    "office",
+    "hospital",
+    "station",
+    "room",
+    "castle",
+    "farm",
+    "island",
+    "coast"
+  ];
+
+  for (const location of locations) {
+    if (s.includes(location)) {
+      return location;
+    }
+  }
+
+  return "story location";
+}
+
+/*
+========================================================
+CINEMATIC GROUPING
+========================================================
+*/
+
+function canMerge(a, b) {
+  if (!a || !b) return false;
+
+  if (a.location !== b.location) {
+    const travel =
+      a.phase === "journey" ||
+      b.phase === "journey";
+
+    if (!travel) return false;
+  }
+
+  if (
+    a.phase === "ending" ||
+    b.phase === "ending"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function groupEvents(events) {
+  const groups = [];
+  let current = [];
+
+  for (const event of events) {
+    if (current.length === 0) {
+      current.push(event);
+      continue;
+    }
+
+    const previous = current[current.length - 1];
+
+    if (
+      current.length < 2 &&
+      canMerge(previous, event)
+    ) {
+      current.push(event);
+    } else {
+      groups.push(current);
+      current = [event];
+    }
+  }
+
+  if (current.length) {
+    groups.push(current);
+  }
+
+  return groups;
+}
+
+function summarizeGroup(group) {
+  if (group.length === 1) {
+    return group[0].action;
+  }
+
+  const first = group[0].action;
+  const rest = group.slice(1).map((x) => x.action);
+
+  return `${first} ${rest.join(" ")}`;
+}
+
+/*
+========================================================
+SCENE DISTRIBUTION
+========================================================
+*/
+
+function distributeGroups(groups, sceneCount) {
+  const scenes = Array.from(
+    { length: sceneCount },
+    () => []
+  );
+
+  let sceneIndex = 0;
+
+  for (const group of groups) {
+    scenes[sceneIndex].push(group);
+
+    if (
+      scenes[sceneIndex].length >= 3 &&
+      sceneIndex < sceneCount - 1
+    ) {
+      sceneIndex++;
+    }
+  }
+
+  /*
+  If some scenes are empty, rebalance.
+  */
+  for (let i = 0; i < scenes.length; i++) {
+    if (scenes[i].length === 0 && i > 0) {
+      const previous = scenes[i - 1];
+
+      if (previous.length > 1) {
+        scenes[i].push(previous.pop());
+      }
+    }
+  }
+
+  return scenes;
+}
+
+function beatTimes(count) {
+  if (count === 3) {
+    return [
+      [0, 3],
+      [3, 7],
+      [7, 10]
+    ];
+  }
+
+  if (count === 2) {
+    return [
+      [0, 5],
+      [5, 10]
+    ];
+  }
+
+  return [[0, 10]];
 }
 
 /*
@@ -404,54 +341,45 @@ DIALOGUE
 ========================================================
 */
 
-function dialogueFor(events) {
-  const ids = events.map((e) => e.id);
+function makeDialogue(groups) {
+  const text = groups
+    .flat()
+    .map((e) => e.action)
+    .join(" ");
 
-  const dialogue = [];
+  const s = text.toLowerCase();
 
-  if (ids.includes("N08") && ids.includes("N09")) {
-    dialogue.push({
-      speaker: "Noah",
-      text: "A powerful storm is coming. We need to prepare now."
-    });
-
-    dialogue.push({
-      speaker: "Villager",
-      text: "Noah, you're just imagining it."
-    });
+  if (s.includes("warn")) {
+    return [
+      {
+        speaker: "Main Character",
+        text: "We need to act before it is too late."
+      }
+    ];
   }
 
-  if (ids.includes("N15")) {
-    dialogue.push({
-      speaker: "Noah",
-      text: "Then I'll fix the lighthouse myself."
-    });
+  if (s.includes("decides") || s.includes("must")) {
+    return [
+      {
+        speaker: "Main Character",
+        text: "I'll handle this myself."
+      }
+    ];
   }
 
-  if (ids.includes("N21") && ids.includes("N22")) {
-    dialogue.push({
-      speaker: "Noah",
-      text: "Come on... work."
-    });
+  if (
+    s.includes("thanks") ||
+    s.includes("thank")
+  ) {
+    return [
+      {
+        speaker: "Supporting Character",
+        text: "Thank you. You saved us."
+      }
+    ];
   }
 
-  if (ids.includes("N29")) {
-    dialogue.push({
-      speaker: "Villager",
-      text: "Thank you, Noah. You saved our town."
-    });
-  }
-
-  return dialogue;
-}
-
-function countDialogueWords(dialogue) {
-  return dialogue
-    .map((item) => item.text || "")
-    .join(" ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
+  return [];
 }
 
 /*
@@ -460,491 +388,114 @@ VOICEOVER
 ========================================================
 */
 
-function voiceoverFor(events) {
-  const ids = events.map((e) => e.id);
+function makeVoiceover(groups) {
+  const text = groups
+    .flat()
+    .map((e) => e.action)
+    .join(" ");
 
-  if (ids.includes("N01") && ids.includes("N02")) {
-    return "Noah lives in a small coastal town and enters his father's workshop.";
+  if (text.length <= 180) {
+    return text;
   }
 
-  if (ids.includes("N03") && ids.includes("N04")) {
-    return "Inside the workshop, Noah discovers an old lighthouse journal and opens it.";
-  }
-
-  if (ids.includes("N05") && ids.includes("N06")) {
-    return "The journal reveals a dangerous storm warning, and Noah realizes the town may be at risk.";
-  }
-
-  if (ids.includes("N07") && ids.includes("N08") && ids.includes("N09")) {
-    return "Noah reaches the villagers and warns them, but they refuse to believe him.";
-  }
-
-  if (ids.includes("N10")) {
-    return "Noah watches the dark horizon and realizes the danger is getting closer.";
-  }
-
-  if (ids.includes("N11") && ids.includes("N12")) {
-    return "The storm arrives with dark clouds and heavy rain.";
-  }
-
-  if (ids.includes("N13") && ids.includes("N14")) {
-    return "The lighthouse signal fails, leaving boats approaching the harbor in danger.";
-  }
-
-  if (ids.includes("N15")) {
-    return "With no one else acting, Noah decides to repair the lighthouse himself.";
-  }
-
-  if (ids.includes("N16") && ids.includes("N17")) {
-    return "Noah runs through the storm and reaches the lighthouse.";
-  }
-
-  if (ids.includes("N18") && ids.includes("N19")) {
-    return "He climbs the lighthouse stairs and reaches the signal room.";
-  }
-
-  if (ids.includes("N20")) {
-    return "Noah finds the damaged signal mechanism and prepares to repair it.";
-  }
-
-  if (ids.includes("N21") && ids.includes("N22")) {
-    return "Noah works quickly to reconnect the damaged mechanism.";
-  }
-
-  if (ids.includes("N23") && ids.includes("N24")) {
-    return "The mechanism comes alive, and the lighthouse signal turns back on.";
-  }
-
-  if (ids.includes("N25")) {
-    return "The restored beam sweeps across the dark sea.";
-  }
-
-  if (ids.includes("N26") && ids.includes("N27")) {
-    return "A rescue boat follows the lighthouse beam and reaches the harbor safely.";
-  }
-
-  if (ids.includes("N28")) {
-    return "By morning, the storm has passed.";
-  }
-
-  if (ids.includes("N29") && ids.includes("N30")) {
-    return "The villagers thank Noah as he looks toward the lighthouse, knowing the town is safe.";
-  }
-
-  return events.map((e) => e.action).join(" ");
+  return text.slice(0, 177).trim() + "...";
 }
 
 /*
 ========================================================
-CINEMATIC BEAT SUMMARIZATION
+CAMERA / LIGHTING
 ========================================================
 */
 
-function actionForBeat(events) {
-  const ids = events.map((e) => e.id);
+function cameraFor(groups) {
+  const text = groups
+    .flat()
+    .map((e) => e.action)
+    .join(" ")
+    .toLowerCase();
 
-  /*
-  Specific cinematic combinations.
-  These are not random; they prevent several tiny actions
-  from becoming an unreadable 10-second sequence.
-  */
-
-  if (ids.join(",") === "N01,N02") {
-    return "Noah enters the small coastal-town workshop where he lives with his father.";
+  if (/runs|chases|fights|rescues/.test(text)) {
+    return "Dynamic cinematic tracking shot with controlled handheld movement.";
   }
 
-  if (ids.join(",") === "N03") {
-    return "Noah discovers an old lighthouse journal on the workshop table.";
+  if (/discovers|finds|opens|notices/.test(text)) {
+    return "Slow cinematic push-in emphasizing the discovery and character reaction.";
   }
 
-  if (ids.join(",") === "N04") {
-    return "Noah opens the journal and begins reading its mysterious pages.";
+  if (/storm|danger|threat/.test(text)) {
+    return "Wide atmospheric shot followed by dramatic reaction close-ups.";
   }
 
-  if (ids.join(",") === "N05,N06") {
-    return "Noah reads the storm warning and realizes the approaching danger could threaten the town.";
+  if (/repairs|fixes|builds/.test(text)) {
+    return "Detailed close-ups of the action mixed with focused medium shots.";
   }
 
-  if (ids.join(",") === "N07,N08,N09") {
-    return "Noah reaches the town square and warns the villagers, but they dismiss his warning.";
+  if (/thanks|morning|safe|saved/.test(text)) {
+    return "Warm cinematic medium shot ending with a slow pull-back.";
   }
 
-  if (ids.join(",") === "N10") {
-    return "Noah looks toward the dark horizon as the approaching storm becomes visible.";
+  return "Smooth cinematic camera movement with natural framing.";
+}
+
+function lightingFor(groups) {
+  const text = groups
+    .flat()
+    .map((e) => e.action)
+    .join(" ")
+    .toLowerCase();
+
+  if (/storm|night|danger/.test(text)) {
+    return "Dramatic cinematic lighting, darker atmosphere and strong contrast.";
   }
 
-  if (ids.join(",") === "N11,N12") {
-    return "Dark storm clouds cover the town as heavy rain begins.";
+  if (/morning|sunrise|safe|thanks/.test(text)) {
+    return "Warm natural morning light with soft cinematic highlights.";
   }
 
-  if (ids.join(",") === "N13,N14") {
-    return "The lighthouse signal fails, and Noah realizes boats approaching the harbor are in danger.";
-  }
-
-  if (ids.join(",") === "N15") {
-    return "Noah makes the decision to repair the lighthouse signal himself.";
-  }
-
-  if (ids.join(",") === "N16,N17") {
-    return "Noah runs through the storm and reaches the lighthouse entrance.";
-  }
-
-  if (ids.join(",") === "N18,N19") {
-    return "Noah climbs the lighthouse stairs and enters the signal room.";
-  }
-
-  if (ids.join(",") === "N20") {
-    return "Noah examines the damaged lighthouse signal mechanism.";
-  }
-
-  if (ids.join(",") === "N21,N22") {
-    return "Noah works on the damaged mechanism and reconnects its components.";
-  }
-
-  if (ids.join(",") === "N23,N24") {
-    return "The mechanism starts moving and the lighthouse signal turns back on.";
-  }
-
-  if (ids.join(",") === "N25") {
-    return "Noah watches the restored lighthouse beam sweep across the sea.";
-  }
-
-  if (ids.join(",") === "N26,N27") {
-    return "A rescue boat follows the restored beam and reaches the harbor safely.";
-  }
-
-  if (ids.join(",") === "N28") {
-    return "The storm passes and morning arrives over the quiet coastal town.";
-  }
-
-  if (ids.join(",") === "N29,N30") {
-    return "The villagers thank Noah as he looks toward the lighthouse and the safe town.";
-  }
-
-  return events.map((e) => e.action).join(" ");
+  return "Natural cinematic lighting with realistic environmental shadows.";
 }
 
 /*
 ========================================================
-CAMERA
+CHARACTER LOCK
 ========================================================
 */
 
-function cameraFor(events, beatIndex) {
-  const ids = events.map((e) => e.id);
-
-  if (ids.includes("N01") || ids.includes("N02")) {
-    return "Wide establishing shot followed by a gentle tracking move toward Noah.";
+function characterLock(characters) {
+  if (!characters.length) {
+    return "Maintain consistent main-character identity throughout the story.";
   }
 
-  if (ids.includes("N03") || ids.includes("N04")) {
-    return "Slow cinematic push-in toward the journal and Noah's reaction.";
-  }
-
-  if (ids.includes("N05") || ids.includes("N06")) {
-    return "Medium close-up on Noah reading, then a slow push toward his concerned expression.";
-  }
-
-  if (ids.includes("N07") || ids.includes("N08") || ids.includes("N09")) {
-    return "Handheld-style medium tracking shot following Noah into the town square, then reaction shots of villagers.";
-  }
-
-  if (ids.includes("N10")) {
-    return "Over-the-shoulder shot from behind Noah toward the darkening horizon.";
-  }
-
-  if (ids.includes("N11") || ids.includes("N12")) {
-    return "Wide atmospheric shot of the coastal town under rapidly darkening storm clouds.";
-  }
-
-  if (ids.includes("N13") || ids.includes("N14")) {
-    return "Alternating close-ups of the dark lighthouse and Noah realizing the danger.";
-  }
-
-  if (ids.includes("N15")) {
-    return "Medium close-up as Noah makes his decision, followed by a determined slow push-in.";
-  }
-
-  if (ids.includes("N16") || ids.includes("N17")) {
-    return "Dynamic tracking shot following Noah running through heavy rain toward the lighthouse.";
-  }
-
-  if (ids.includes("N18") || ids.includes("N19")) {
-    return "Low-angle tracking shot climbing with Noah up the lighthouse stairs.";
-  }
-
-  if (ids.includes("N20")) {
-    return "Close-up inspection shot of the damaged mechanism, then Noah's focused face.";
-  }
-
-  if (ids.includes("N21") || ids.includes("N22")) {
-    return "Tight mechanical close-ups mixed with medium shots of Noah repairing the mechanism.";
-  }
-
-  if (ids.includes("N23") || ids.includes("N24")) {
-    return "Close-up of the mechanism activating, followed by a dramatic pull-back revealing the lighthouse beam.";
-  }
-
-  if (ids.includes("N25")) {
-    return "Wide cinematic shot of the restored beam sweeping across the ocean.";
-  }
-
-  if (ids.includes("N26") || ids.includes("N27")) {
-    return "Wide aerial-style view of the rescue boat following the lighthouse beam toward the harbor.";
-  }
-
-  if (ids.includes("N28")) {
-    return "Slow sunrise transition from storm clouds to a calm coastal town.";
-  }
-
-  if (ids.includes("N29") || ids.includes("N30")) {
-    return "Warm medium shot of the villagers thanking Noah, ending with a slow pull-back toward the lighthouse.";
-  }
-
-  return beatIndex === 0
-    ? "Cinematic establishing shot."
-    : "Smooth cinematic tracking shot.";
+  return `Maintain these detected characters consistently: ${characters.join(
+    ", "
+  )}. Do not change their age, face, clothing, hairstyle or identity unless the story explicitly requires it.`;
 }
 
 /*
 ========================================================
-LIGHTING
+SCENE CREATOR
 ========================================================
 */
 
-function lightingFor(events) {
-  const ids = events.map((e) => e.id);
+function createScene(groups, sceneNumber, characters) {
+  const limitedGroups = groups.slice(0, 3);
+  const times = beatTimes(limitedGroups.length);
 
-  if (ids.some((id) => ["N11", "N12", "N13", "N14", "N15"].includes(id))) {
-    return "Dark storm lighting, cold overcast sky, wet reflective surfaces, dramatic contrast.";
-  }
+  const beats = limitedGroups.map((group, index) => {
+    const [start, end] = times[index];
 
-  if (ids.some((id) => ["N16", "N17", "N18", "N19", "N20"].includes(id))) {
-    return "Cold blue-gray storm light mixed with dim lighthouse interior lighting.";
-  }
+    const action = summarizeGroup(group);
 
-  if (ids.some((id) => ["N21", "N22", "N23", "N24", "N25"].includes(id))) {
-    return "Moody storm lighting with warm mechanical highlights and a powerful lighthouse beam.";
-  }
-
-  if (ids.some((id) => ["N26", "N27"].includes(id))) {
-    return "Dark ocean atmosphere illuminated by the bright lighthouse beam.";
-  }
-
-  if (ids.includes("N28") || ids.includes("N29") || ids.includes("N30")) {
-    return "Soft warm morning sunlight after the storm, calm atmosphere, gentle golden highlights.";
-  }
-
-  return "Natural cinematic lighting with realistic coastal atmosphere.";
-}
-
-/*
-========================================================
-CONTINUITY
-========================================================
-*/
-
-function continuityFor(events, sceneNumber) {
-  const ids = events.map((e) => e.id);
-
-  let continuity =
-    "Maintain Noah's exact appearance, clothing, age, hairstyle and facial identity.";
-
-  if (ids.some((id) => ["N11", "N12", "N13", "N14", "N15"].includes(id))) {
-    continuity +=
-      " The weather must visibly progress into a powerful storm with increasing rain and darkness.";
-  }
-
-  if (ids.some((id) => ["N16", "N17", "N18", "N19", "N20"].includes(id))) {
-    continuity +=
-      " Noah's navy hoodie, dark jeans and white sneakers remain unchanged and become visibly wet from the storm.";
-  }
-
-  if (ids.some((id) => ["N21", "N22", "N23", "N24", "N25"].includes(id))) {
-    continuity +=
-      " Keep the same damaged lighthouse mechanism and signal room layout throughout the repair.";
-  }
-
-  if (ids.some((id) => ["N26", "N27"].includes(id))) {
-    continuity +=
-      " The rescue boat must follow the same restored lighthouse beam established in the previous scene.";
-  }
-
-  if (ids.some((id) => ["N28", "N29", "N30"].includes(id))) {
-    continuity +=
-      " Transition naturally from the stormy night into a calm morning without changing character identities.";
-  }
-
-  continuity += ` Scene ${sceneNumber} must connect directly to the previous scene without resetting the story.`;
-
-  return continuity;
-}
-
-/*
-========================================================
-VISUAL PROMPT
-========================================================
-*/
-
-function createVisualPrompt(sceneNumber, beat, characters) {
-  const characterLock = characterText(characters);
-
-  return [
-    `Cinematic 3D animated movie style, slightly realistic, 4K quality.`,
-    `Scene ${sceneNumber}, exact beat ${beat.start_time}-${beat.end_time}.`,
-    `Action: ${beat.action}`,
-    `Location: ${beat.location}.`,
-    `Characters present: ${characterLock}`,
-    `Camera: ${beat.camera}`,
-    `Lighting: ${beat.lighting}`,
-    `Maintain strict character identity and environmental continuity.`,
-    `Do not add unrelated characters, objects, actions, locations, or story events.`,
-    `The action must happen naturally within this exact time window.`
-  ].join(" ");
-}
-
-/*
-========================================================
-BEAT TIME ALLOCATION
-========================================================
-*/
-
-function allocateBeatTimes(count) {
-  if (count === 3) {
-    return [
-      { start: 0, end: 3 },
-      { start: 3, end: 7 },
-      { start: 7, end: 10 }
-    ];
-  }
-
-  if (count === 2) {
-    return [
-      { start: 0, end: 5 },
-      { start: 5, end: 10 }
-    ];
-  }
-
-  return [{ start: 0, end: 10 }];
-}
-
-/*
-========================================================
-V35 SCENE BEAT PLAN
-========================================================
-This is the cinematic grouping layer.
-
-Important:
-The grouping is chronological.
-No event can jump backward or disappear.
-Each beat has one clear cinematic purpose.
-*/
-
-const V35_BEAT_PLAN = [
-  {
-    scene: 1,
-    beats: [
-      ["N01", "N02"],
-      ["N03"],
-      ["N04"]
-    ]
-  },
-
-  {
-    scene: 2,
-    beats: [
-      ["N05", "N06"],
-      ["N07", "N08", "N09"],
-      ["N10"]
-    ]
-  },
-
-  {
-    scene: 3,
-    beats: [
-      ["N11", "N12"],
-      ["N13", "N14"],
-      ["N15"]
-    ]
-  },
-
-  {
-    scene: 4,
-    beats: [
-      ["N16", "N17"],
-      ["N18", "N19"],
-      ["N20"]
-    ]
-  },
-
-  {
-    scene: 5,
-    beats: [
-      ["N21", "N22"],
-      ["N23", "N24"],
-      ["N25"]
-    ]
-  },
-
-  {
-    scene: 6,
-    beats: [
-      ["N26", "N27"],
-      ["N28"],
-      ["N29", "N30"]
-    ]
-  }
-];
-
-/*
-========================================================
-SCENE CREATION
-========================================================
-*/
-
-function makeScene(scenePlan, eventMap) {
-  const sceneNumber = scenePlan.scene;
-
-  const groups = scenePlan.beats.map((ids) =>
-    ids
-      .map((id) => eventMap.get(id))
-      .filter(Boolean)
-  );
-
-  const times = allocateBeatTimes(groups.length);
-
-  const beats = groups.map((events, index) => {
-    const time = times[index];
-
-    const characters = charactersForEvents(events);
-    const objects = objectText(events.map((e) => e.id));
-
-    const action = actionForBeat(events);
-
-    const beat = {
-      start_time: time.start,
-      end_time: time.end,
-      location: events[0]?.location || "unknown",
+    return {
+      start_time: start,
+      end_time: end,
+      location: group[0]?.location || "story location",
       action,
-      event_ids: events.map((e) => e.id),
-      characters,
-      objects,
-      camera: cameraFor(events, index),
-      lighting: lightingFor(events)
+      event_ids: group.map((e) => e.id),
+      camera: cameraFor([group]),
+      lighting: lightingFor([group])
     };
-
-    beat.visual_prompt = createVisualPrompt(
-      sceneNumber,
-      beat,
-      characters
-    );
-
-    return beat;
   });
-
-  const allEvents = groups.flat();
-
-  const dialogue = dialogueFor(allEvents);
 
   return {
     scene_number: sceneNumber,
@@ -953,175 +504,39 @@ function makeScene(scenePlan, eventMap) {
 
     visual_prompt: beats
       .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.action}`
+        (b) =>
+          `${b.start_time}-${b.end_time}s: ${b.action}`
       )
       .join(" "),
 
     camera: beats
       .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.camera}`
+        (b) =>
+          `${b.start_time}-${b.end_time}s: ${b.camera}`
       )
       .join(" "),
 
     lighting: beats
       .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.lighting}`
+        (b) =>
+          `${b.start_time}-${b.end_time}s: ${b.lighting}`
       )
       .join(" "),
 
     action: beats
       .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.action}`
+        (b) =>
+          `${b.start_time}-${b.end_time}s: ${b.action}`
       )
       .join(" "),
 
-    dialogue,
+    dialogue: makeDialogue(limitedGroups),
 
-    voiceover: voiceoverFor(allEvents),
+    voiceover: makeVoiceover(limitedGroups),
 
-    continuity: continuityFor(allEvents, sceneNumber),
+    continuity: characterLock(characters),
 
-    characters: unique(
-      beats.flatMap((beat) => beat.characters)
-    ),
-
-    objects: unique(
-      beats.flatMap((beat) => beat.objects)
-    ),
-
-    beats
-  };
-}
-
-/*
-========================================================
-FINAL SCENE
-========================================================
-*/
-
-function makeFinalScene(eventMap) {
-  const rescueEvents = ["N26", "N27"]
-    .map((id) => eventMap.get(id))
-    .filter(Boolean);
-
-  const transitionEvents = ["N28"]
-    .map((id) => eventMap.get(id))
-    .filter(Boolean);
-
-  const resolutionEvents = ["N29", "N30"]
-    .map((id) => eventMap.get(id))
-    .filter(Boolean);
-
-  const beats = [
-    {
-      start_time: 0,
-      end_time: 5,
-      location: "harbor",
-      action:
-        "A rescue boat follows the restored lighthouse beam and reaches the harbor safely.",
-      event_ids: ["N26", "N27"],
-      characters: ["RescueCrew"],
-      objects: ["rescue boat", "lighthouse signal mechanism"],
-      camera:
-        "Wide cinematic tracking shot following the rescue boat toward the harbor.",
-      lighting:
-        "Dark storm atmosphere illuminated by the powerful lighthouse beam."
-    },
-
-    {
-      start_time: 5,
-      end_time: 6,
-      location: "coastal town",
-      action:
-        "The storm passes and the scene transitions naturally into the next morning.",
-      event_ids: ["N28"],
-      characters: ["Noah"],
-      objects: [],
-      camera:
-        "Smooth cinematic time transition from storm clouds into warm morning light.",
-      lighting:
-        "Storm darkness gradually fades into soft golden morning sunlight."
-    },
-
-    {
-      start_time: 6,
-      end_time: 10,
-      location: "coastal town and lighthouse",
-      action:
-        "The villagers thank Noah as he looks toward the lighthouse and the safe town.",
-      event_ids: ["N29", "N30"],
-      characters: ["Noah", "Villagers"],
-      objects: ["lighthouse"],
-      camera:
-        "Warm medium shot of the villagers thanking Noah, ending with a slow pull-back toward the lighthouse.",
-      lighting:
-        "Soft golden morning light after the storm."
-    }
-  ];
-
-  for (const beat of beats) {
-    beat.visual_prompt = createVisualPrompt(
-      6,
-      beat,
-      beat.characters
-    );
-  }
-
-  const dialogue = [
-    {
-      speaker: "Villager",
-      text: "Thank you, Noah. You saved our town."
-    }
-  ];
-
-  return {
-    scene_number: 6,
-    start_time: "0s",
-    end_time: "10s",
-
-    visual_prompt: beats
-      .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.action}`
-      )
-      .join(" "),
-
-    camera: beats
-      .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.camera}`
-      )
-      .join(" "),
-
-    lighting: beats
-      .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.lighting}`
-      )
-      .join(" "),
-
-    action: beats
-      .map(
-        (beat) =>
-          `${beat.start_time}-${beat.end_time}s: ${beat.action}`
-      )
-      .join(" "),
-
-    dialogue,
-
-    voiceover:
-      "The rescue boat reaches safety. By morning, the storm has passed and the villagers thank Noah for saving the town.",
-
-    continuity:
-      "The rescue must directly follow the restored lighthouse signal. Transition naturally from the stormy night to the next morning. Keep Noah's exact appearance and preserve the lighthouse location.",
-
-    characters: ["Noah", "Villagers", "RescueCrew"],
-
-    objects: ["rescue boat", "lighthouse signal mechanism", "lighthouse"],
+    characters,
 
     beats
   };
@@ -1133,106 +548,70 @@ VALIDATION
 ========================================================
 */
 
-function validateScenes(scenes, expectedEventIds) {
+function validateScenes(scenes, events) {
   const errors = [];
 
-  if (scenes.length !== 6) {
-    errors.push(`Expected 6 scenes, received ${scenes.length}.`);
+  if (!scenes.length) {
+    errors.push("No scenes generated.");
   }
-
-  const flattenedIds = [];
 
   for (const scene of scenes) {
     if (scene.start_time !== "0s") {
-      errors.push(`Scene ${scene.scene_number} must start at 0s.`);
+      errors.push(`Scene ${scene.scene_number} start time invalid.`);
     }
 
     if (scene.end_time !== "10s") {
-      errors.push(`Scene ${scene.scene_number} must end at 10s.`);
+      errors.push(`Scene ${scene.scene_number} end time invalid.`);
     }
 
     if (!Array.isArray(scene.beats)) {
-      errors.push(`Scene ${scene.scene_number} has no beat array.`);
+      errors.push(`Scene ${scene.scene_number} has no beats.`);
       continue;
     }
 
-    if (scene.beats.length !== 3) {
-      errors.push(
-        `Scene ${scene.scene_number} must contain exactly 3 beats.`
-      );
-    }
-
-    let previousEnd = 0;
+    let previous = 0;
 
     for (const beat of scene.beats) {
-      if (beat.start_time !== previousEnd) {
+      if (beat.start_time !== previous) {
         errors.push(
-          `Scene ${scene.scene_number} has a timing gap or overlap.`
+          `Scene ${scene.scene_number} contains timing gap.`
         );
       }
 
-      if (beat.end_time <= beat.start_time) {
-        errors.push(
-          `Scene ${scene.scene_number} contains invalid beat timing.`
-        );
-      }
+      previous = beat.end_time;
 
-      previousEnd = beat.end_time;
-
-      if (!Array.isArray(beat.event_ids)) {
+      if (!beat.action) {
         errors.push(
-          `Scene ${scene.scene_number} contains invalid event IDs.`
-        );
-      } else {
-        flattenedIds.push(...beat.event_ids);
-      }
-
-      if (!beat.action || typeof beat.action !== "string") {
-        errors.push(
-          `Scene ${scene.scene_number} contains an empty cinematic action.`
-        );
-      }
-
-      if (!beat.location) {
-        errors.push(
-          `Scene ${scene.scene_number} contains an empty location.`
+          `Scene ${scene.scene_number} has empty action.`
         );
       }
     }
 
-    if (previousEnd !== 10) {
+    if (previous !== 10) {
       errors.push(
-        `Scene ${scene.scene_number} does not end exactly at 10 seconds.`
+        `Scene ${scene.scene_number} does not end at 10 seconds.`
       );
     }
 
     if (!Array.isArray(scene.dialogue)) {
       errors.push(
-        `Scene ${scene.scene_number} dialogue must be an array.`
-      );
-    } else {
-      const words = countDialogueWords(scene.dialogue);
-
-      if (words > 35) {
-        errors.push(
-          `Scene ${scene.scene_number} dialogue is too long: ${words} words.`
-        );
-      }
-    }
-
-    if (!scene.voiceover || typeof scene.voiceover !== "string") {
-      errors.push(
-        `Scene ${scene.scene_number} is missing voiceover.`
+        `Scene ${scene.scene_number} dialogue invalid.`
       );
     }
   }
 
-  const expected = JSON.stringify(expectedEventIds);
-  const actual = JSON.stringify(flattenedIds);
+  const generatedIds = scenes.flatMap((scene) =>
+    scene.beats.flatMap((beat) => beat.event_ids)
+  );
 
-  if (expected !== actual) {
+  const expectedIds = events.map((e) => e.id);
+
+  if (
+    JSON.stringify(generatedIds) !==
+    JSON.stringify(expectedIds)
+  ) {
     errors.push(
-      `Chronology/event coverage mismatch. Expected ${expected}, received ${actual}.`
+      "Event chronology or event coverage mismatch."
     );
   }
 
@@ -1244,45 +623,86 @@ function validateScenes(scenes, expectedEventIds) {
 
 /*
 ========================================================
-ENGINE
+V36 ENGINE
 ========================================================
 */
 
-function generateProject() {
-  const events = getStoryEvents();
+function generateProject(prompt, duration, aspectRatio) {
+  const sentences = splitStory(prompt);
 
-  const eventMap = new Map(
-    events.map((event) => [event.id, event])
-  );
+  if (sentences.length < 2) {
+    throw new Error(
+      "Story is too short. Please provide a complete story."
+    );
+  }
 
-  const scenes = V35_BEAT_PLAN.map((plan) =>
-    makeScene(plan, eventMap)
-  );
+  const characters = extractCharacters(prompt);
+  const locations = extractLocations(sentences);
+  const events = extractEvents(sentences);
 
   /*
-  Scene 6 receives the special final-resolution treatment.
+  Current supported cinematic duration.
+  60 seconds = 6 x 10-second scenes.
   */
-  scenes[5] = makeFinalScene(eventMap);
+  const sceneCount = Math.floor(Number(duration) / 10);
+
+  if (sceneCount < 1) {
+    throw new Error("Duration must be at least 10 seconds.");
+  }
+
+  if (sceneCount > 6) {
+    throw new Error(
+      "V36 currently supports up to 60 seconds while the universal planner is being tested."
+    );
+  }
+
+  const groups = groupEvents(events);
+
+  const sceneGroups = distributeGroups(
+    groups,
+    sceneCount
+  );
+
+  const scenes = sceneGroups.map(
+    (groupsForScene, index) =>
+      createScene(
+        groupsForScene,
+        index + 1,
+        characters
+      )
+  );
 
   const validation = validateScenes(
     scenes,
-    events.map((event) => event.id)
+    events
   );
 
   if (!validation.valid) {
     throw new Error(
-      "V35 validation failed:\n" +
-        validation.errors.join("\n")
+      validation.errors.join("\n")
     );
   }
 
   return {
-    engine_version: ENGINE_VERSION,
-    mode: "DETERMINISTIC_CINEMATIC_ENGINE",
-    duration: 60,
+    status: "success",
+    engine: ENGINE_VERSION,
+    mode: "UNIVERSAL_LOCAL_STORY_PLANNER",
+
+    prompt,
+
+    duration: Number(duration),
+
     total_scenes: scenes.length,
-    scene_duration: 10,
-    aspect_ratio: "16:9",
+
+    aspect_ratio: aspectRatio,
+
+    story_analysis: {
+      detected_characters: characters,
+      detected_locations: locations,
+      total_events: events.length,
+      total_cinematic_groups: groups.length
+    },
+
     scenes
   };
 }
@@ -1296,11 +716,11 @@ API
 app.get("/api/test", (req, res) => {
   res.json({
     status: "success",
+    app: "SANAPTAI",
     engine: ENGINE_VERSION,
-    message: "SANAPTAI V35 cinematic beat engine is running.",
+    message: "SANAPTAI V36 Universal Story Engine is running.",
     gemini: "disabled",
-    video_generation: "disabled",
-    planner: "deterministic"
+    video_generation: "disabled"
   });
 });
 
@@ -1312,58 +732,39 @@ app.post("/api/demo-project", (req, res) => {
       aspectRatio = "16:9"
     } = req.body || {};
 
-    if (!prompt.trim()) {
+    if (!clean(prompt)) {
       return res.status(400).json({
         status: "error",
         message: "Video prompt is required."
       });
     }
 
-    if (Number(duration) !== 60) {
-      return res.status(400).json({
-        status: "error",
-        code: "duration_not_ready",
-        message:
-          "V35 testing currently supports exactly 60 seconds."
-      });
-    }
-
-    const project = generateProject();
-
-    project.prompt = prompt;
-    project.aspect_ratio = aspectRatio;
+    const project = generateProject(
+      prompt,
+      duration,
+      aspectRatio
+    );
 
     return res.json(project);
   } catch (error) {
-    console.error("V35 ENGINE ERROR:", error);
+    console.error("V36 ERROR:", error);
 
-    return res.status(500).json({
+    return res.status(400).json({
       status: "error",
       engine: ENGINE_VERSION,
-      message: "V35 engine validation failed.",
-      error: error.message
+      message: error.message
     });
   }
 });
 
-/*
-========================================================
-HEALTH
-========================================================
-*/
-
-app.use(express.static("public"));
-
 app.get("/", (req, res) => {
-  res.sendFile(process.cwd() + "/public/index.html");
+  res.sendFile(
+    process.cwd() + "/public/index.html"
+  );
 });
 
-/*
-========================================================
-START SERVER
-========================================================
-*/
-
 app.listen(PORT, () => {
-  console.log(`SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`);
+  console.log(
+    `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
+  );
 });
