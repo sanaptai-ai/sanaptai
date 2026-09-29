@@ -14,16 +14,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 function cleanText(value = "") {
-  return String(value)
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function splitSentences(text = "") {
-  return cleanText(text)
-    .split(/(?<=[.!?])\s+/)
-    .map(s => s.trim())
-    .filter(Boolean);
+  return String(value).replace(/\s+/g, " ").trim();
 }
 
 function unique(arr = []) {
@@ -38,133 +29,111 @@ function sceneTimes(index) {
   };
 }
 
-/* =========================
+/* =========================================================
    CHARACTER ENGINE
-========================= */
+========================================================= */
+
+function getCharacter(name) {
+  const locks = {
+    Noah:
+      "14-year-old boy named Noah, youthful face, dark brown eyes, short slightly messy black hair, slim teenage build, casual blue shirt, dark jeans and white sneakers.",
+
+    Father:
+      "Adult father with natural facial features, medium build, short dark hair, simple practical everyday clothing.",
+
+    Villagers:
+      "Group of coastal-town villagers wearing practical everyday clothing.",
+
+    "Rescue Crew":
+      "Professional rescue crew wearing practical weather-resistant rescue clothing.",
+
+    "Main Character":
+      "Main story character with a stable face, age, hairstyle, clothing, body proportions and physical appearance."
+  };
+
+  return locks[name] || locks["Main Character"];
+}
 
 function extractCharacters(text) {
-  const chars = [];
+  const result = [];
 
-  if (/\bNoah\b/i.test(text)) {
-    chars.push({
-      name: "Noah",
-      role: "main",
-      description:
-        "14-year-old boy named Noah, youthful face, dark brown eyes, short slightly messy black hair, slim teenage build, casual blue shirt, dark jeans and white sneakers."
-    });
+  if (/\bNoah\b/i.test(text)) result.push("Noah");
+  if (/\bfather\b/i.test(text)) result.push("Father");
+  if (/\bvillagers?\b/i.test(text)) result.push("Villagers");
+  if (/rescue boat|rescuers?|rescue crew/i.test(text)) {
+    result.push("Rescue Crew");
   }
 
-  if (/\bfather\b/i.test(text)) {
-    chars.push({
-      name: "Father",
-      role: "supporting",
-      description:
-        "Adult father with natural facial features, medium build, short dark hair, simple practical everyday clothing."
-    });
-  }
+  if (!result.length) result.push("Main Character");
 
-  if (/\bvillagers?\b/i.test(text)) {
-    chars.push({
-      name: "Villagers",
-      role: "supporting",
-      description:
-        "Group of coastal-town villagers wearing practical everyday clothing."
-    });
-  }
-
-  if (/rescue boat|rescuer|rescuers/i.test(text)) {
-    chars.push({
-      name: "Rescue Crew",
-      role: "supporting",
-      description:
-        "Professional rescue crew wearing practical weather-resistant rescue clothing."
-    });
-  }
-
-  if (!chars.length) {
-    chars.push({
-      name: "Main Character",
-      role: "main",
-      description:
-        "Main story character with a stable face, age, hairstyle, clothing and body proportions."
-    });
-  }
-
-  return chars;
+  return unique(result);
 }
 
-/* =========================
+/* =========================================================
    LOCATION ENGINE
-========================= */
+========================================================= */
 
-function extractLocations(text) {
-  const locations = [];
-
+function extractLocation(text) {
   const checks = [
-    ["coastal town", /coastal town/i],
-    ["workshop", /workshop/i],
-    ["lighthouse", /lighthouse/i],
-    ["harbor", /harbor|harbour/i],
-    ["town", /\btown\b/i],
-    ["road", /\broad\b/i],
-    ["house", /\bhouse\b|\bhome\b/i],
-    ["village", /\bvillage\b/i],
-    ["forest", /\bforest\b/i],
-    ["mountain", /\bmountain\b/i],
-    ["beach", /\bbeach\b/i],
-    ["river", /\briver\b/i],
-    ["lake", /\blake\b/i],
-    ["hospital", /\bhospital\b/i],
-    ["school", /\bschool\b/i]
+    ["Coastal Town", /coastal town/i],
+    ["Workshop", /workshop/i],
+    ["Lighthouse", /lighthouse/i],
+    ["Harbor", /harbor|harbour/i],
+    ["Town", /\btown\b/i],
+    ["House", /\bhouse\b|\bhome\b/i],
+    ["Road", /\broad\b/i],
+    ["Village", /\bvillage\b/i],
+    ["Forest", /\bforest\b/i],
+    ["Mountain", /\bmountain\b/i],
+    ["Beach", /\bbeach\b/i],
+    ["River", /\briver\b/i],
+    ["Lake", /\blake\b/i],
+    ["Hospital", /\bhospital\b/i]
   ];
 
   for (const [name, regex] of checks) {
-    if (regex.test(text)) locations.push(name);
+    if (regex.test(text)) return name;
   }
 
-  return unique(locations);
+  return "Story Location";
 }
 
-/* =========================
-   OBJECT ENGINE
-========================= */
+/* =========================================================
+   PROP ENGINE
+========================================================= */
 
-function extractObjects(text) {
-  const objects = [];
+function extractProps(text) {
+  const props = [];
 
-  const checks = [
-    ["Lighthouse Journal", /lighthouse journal|journal/i],
-    ["Storm Warning", /storm warning|warning/i],
-    ["Lighthouse Signal", /lighthouse signal|signal/i],
-    ["Rescue Boat", /rescue boat/i],
-    ["Boat", /\bboat\b/i],
-    ["Phone", /\bphone\b|\btelephone\b/i],
-    ["Map", /\bmap\b/i],
-    ["Key", /\bkey\b/i],
-    ["Door", /\bdoor\b/i],
-    ["Radio", /\bradio\b/i],
-    ["Flashlight", /\bflashlight\b/i],
-    ["Rope", /\brope\b/i]
-  ];
-
-  for (const [name, regex] of checks) {
-    if (regex.test(text)) objects.push(name);
+  if (/lighthouse journal|journal/i.test(text)) {
+    props.push("Lighthouse Journal");
   }
 
-  return unique(objects);
+  if (/storm warning|warning/i.test(text)) {
+    props.push("Storm Warning");
+  }
+
+  if (/lighthouse signal|signal/i.test(text)) {
+    props.push("Lighthouse Signal");
+  }
+
+  if (/rescue boat/i.test(text)) {
+    props.push("Rescue Boat");
+  }
+
+  return unique(props);
 }
 
-/* =========================
-   V16 STORY EVENT ENGINE
-========================= */
+/* =========================================================
+   NOAH CORE STORY
+========================================================= */
 
-function createNoahEvents() {
+function createNoahCoreEvents() {
   return [
     {
       id: "E01",
       type: "setup",
-      action:
-        "Noah lives with his father in a small coastal town.",
+      action: "Noah lives with his father in a small coastal town.",
       characters: ["Noah", "Father"],
       location: "Coastal Town",
       props: [],
@@ -552,80 +521,396 @@ function createNoahEvents() {
   ];
 }
 
-/* =========================
-   GENERIC STORY ENGINE
-========================= */
+/* =========================================================
+   V17 TWO-SCENE EXPANSION
+========================================================= */
 
-function createGenericEvents(text) {
-  const sentences = splitSentences(text);
+function expandCoreEvent(event) {
+  const e = { ...event };
 
-  return sentences.map((sentence, index) => ({
-    id: `G${String(index + 1).padStart(2, "0")}`,
-    type:
-      index === 0
-        ? "setup"
-        : /finally|by morning|returns home|safe|saved|reunited/i.test(sentence)
-        ? "resolution"
-        : /discovers|finds|notices|sees|hears|realizes|learns/i.test(sentence)
-        ? "discovery"
-        : /decides|plans|chooses|tries|attempts|begins/i.test(sentence)
-        ? "decision"
-        : /storm|danger|attack|trapped|lost|problem|threat|fire|accident/i.test(sentence)
-        ? "conflict"
-        : /helps|rescues|gives|calls|repairs|builds|carries|protects|searches|climbs|runs|walks|drives|enters|leaves/i.test(sentence)
-        ? "action"
-        : "story",
-    action: sentence,
-    characters: extractCharacters(sentence).map(c => c.name),
-    location: extractLocations(sentence)[0] || "Story Location",
-    props: extractObjects(sentence),
-    dialogue: "We have to keep going.",
-    voiceover: sentence
-  }));
+  const variants = {
+    setup: [
+      {
+        ...e,
+        phase: "establish",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "reaction",
+        action: `Show the characters naturally experiencing this exact situation: ${e.action}`,
+        dialogue:
+          e.id === "E01"
+            ? "It's a quiet morning in town."
+            : "Let's get started.",
+        voiceover: e.voiceover
+      }
+    ],
+
+    discovery: [
+      {
+        ...e,
+        phase: "approach",
+        action: e.id === "E03"
+          ? "Noah notices something unusual in the workshop and moves closer to the old lighthouse journal."
+          : e.id === "E04"
+          ? "Noah carefully examines the old lighthouse journal before opening it."
+          : e.id === "E05"
+          ? "Noah studies the pages of the lighthouse journal and notices a serious warning."
+          : e.id === "E15"
+          ? "Noah looks toward the lighthouse and notices that its usual signal is missing."
+          : e.id === "E20"
+          ? "Noah reaches the top of the lighthouse and approaches the damaged signal mechanism."
+          : e.action,
+        dialogue:
+          e.id === "E05"
+            ? "Something is wrong here."
+            : e.id === "E15"
+            ? "Why is the light off?"
+            : "What is this?",
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "reveal",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ],
+
+    realization: [
+      {
+        ...e,
+        phase: "observation",
+        action: `Noah carefully considers the situation described by this story event: ${e.action}`,
+        dialogue:
+          e.id === "E16"
+            ? "Those boats need that signal."
+            : "This could be serious.",
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "understanding",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ],
+
+    decision: [
+      {
+        ...e,
+        phase: "choice",
+        action: `Noah considers what must be done next before acting on this decision: ${e.action}`,
+        dialogue:
+          e.id === "E07"
+            ? "Someone has to warn them."
+            : "I know what I have to do.",
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "commitment",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ],
+
+    action: [
+      {
+        ...e,
+        phase: "preparation",
+        action: `Noah prepares for the exact action that follows: ${e.action}`,
+        dialogue:
+          e.id === "E18"
+            ? "I have to reach the lighthouse."
+            : e.id === "E19"
+            ? "I have to keep climbing."
+            : e.id === "E22"
+            ? "Let's get this working."
+            : e.id === "E26"
+            ? "Stay with the signal."
+            : "Keep moving.",
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "execution",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ],
+
+    conflict: [
+      {
+        ...e,
+        phase: "build",
+        action:
+          e.id === "E12"
+            ? "Noah watches dark clouds gather over the coastal town."
+            : e.id === "E13"
+            ? "Strong winds intensify around Noah and the villagers as the storm approaches."
+            : e.id === "E14"
+            ? "Heavy rain intensifies while the villagers react to the approaching storm."
+            : e.action,
+        dialogue:
+          e.id === "E12"
+            ? "Those clouds are getting darker."
+            : e.id === "E13"
+            ? "The storm is getting closer."
+            : e.id === "E14"
+            ? "We need to get inside."
+            : e.dialogue,
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "consequence",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ],
+
+    climax: [
+      {
+        ...e,
+        phase: "attempt",
+        action:
+          e.id === "E24"
+            ? "Noah makes the final connection and attempts to restore the lighthouse signal."
+            : e.id === "E25"
+            ? "Through the storm, Noah spots the rescue boat responding to the restored signal."
+            : e.action,
+        dialogue:
+          e.id === "E24"
+            ? "Please turn on."
+            : e.id === "E25"
+            ? "They saw the light!"
+            : e.dialogue,
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "result",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ],
+
+    resolution: [
+      {
+        ...e,
+        phase: "arrival",
+        action:
+          e.id === "E29"
+            ? "The first calm morning arrives after the powerful storm."
+            : e.id === "E30"
+            ? "The villagers gather in the safe coastal town and look toward Noah."
+            : e.action,
+        dialogue:
+          e.id === "E29"
+            ? "It's finally quiet."
+            : e.id === "E30"
+            ? "We owe you thanks."
+            : e.dialogue,
+        voiceover: e.voiceover
+      },
+      {
+        ...e,
+        phase: "completion",
+        action: e.action,
+        dialogue: e.dialogue,
+        voiceover: e.voiceover
+      }
+    ]
+  };
+
+  return variants[e.type] || [
+    {
+      ...e,
+      phase: "main"
+    },
+    {
+      ...e,
+      phase: "continuation",
+      action: `Continue the exact story event naturally: ${e.action}`
+    }
+  ];
 }
 
-function buildGenericTimeline(text, targetScenes) {
-  const events = createGenericEvents(text);
+/* =========================================================
+   V17 LONG-FORM TIMELINE
+========================================================= */
 
-  if (!events.length) {
-    return [];
+function buildNoahTimeline(targetScenes) {
+  const core = createNoahCoreEvents();
+
+  /*
+    30 scenes:
+    exactly one core event per scene.
+
+    60 scenes:
+    exactly two cinematic phases per core event.
+
+    120 scenes:
+    each core event gets four controlled phases.
+  */
+
+  if (targetScenes === 30) {
+    return core;
   }
 
-  const timeline = [];
+  if (targetScenes === 60) {
+    return core.flatMap(expandCoreEvent);
+  }
 
-  for (const event of events) {
-    timeline.push({
-      ...event,
-      phase: "main"
+  if (targetScenes === 120) {
+    const timeline = [];
+
+    for (const event of core) {
+      const pair = expandCoreEvent(event);
+
+      for (const scene of pair) {
+        timeline.push(scene);
+
+        timeline.push({
+          ...scene,
+          phase: `${scene.phase}-continuation`,
+          action:
+            `Continue the same story moment without advancing to a later event: ${scene.action}`,
+          dialogue:
+            scene.phase === "execution"
+              ? "Keep going."
+              : scene.dialogue,
+          voiceover: scene.voiceover
+        });
+      }
+    }
+
+    return timeline;
+  }
+
+  /*
+    For unusual durations, sample the 60-scene structure
+    while preserving chronological order and the final event.
+  */
+
+  const expanded = core.flatMap(expandCoreEvent);
+
+  if (targetScenes < expanded.length) {
+    const result = [];
+
+    for (let i = 0; i < targetScenes; i++) {
+      const index = Math.round(
+        (i * (expanded.length - 1)) /
+          Math.max(1, targetScenes - 1)
+      );
+
+      result.push(expanded[index]);
+    }
+
+    return result;
+  }
+
+  const result = [...expanded];
+
+  while (result.length < targetScenes) {
+    const lastCoreEvent = core[core.length - 1];
+
+    result.splice(result.length - 1, 0, {
+      ...lastCoreEvent,
+      phase: "ending-development",
+      action:
+        "Continue the peaceful aftermath immediately before the final realization: the town remains safe after Noah's actions.",
+      characters: ["Noah", "Father", "Villagers"],
+      location: "Coastal Town",
+      props: [],
+      dialogue: "The town is safe now.",
+      voiceover:
+        "The town remains safe as the people prepare for the final realization."
     });
   }
 
-  while (timeline.length < targetScenes) {
-    const source = events[(timeline.length - events.length) % events.length];
-
-    timeline.splice(
-      Math.max(0, timeline.length - 1),
-      0,
-      {
-        ...source,
-        phase: "development",
-        action:
-          `Continue the exact story event: ${source.action}`,
-        voiceover:
-          source.voiceover
-      }
-    );
-  }
-
-  return timeline.slice(0, targetScenes);
+  return result.slice(0, targetScenes);
 }
 
-/* =========================
-   TIMELINE SELECTOR
-========================= */
+/* =========================================================
+   GENERIC ENGINE
+========================================================= */
 
-function buildTimeline(text, targetScenes) {
-  const lower = text.toLowerCase();
+function buildGenericTimeline(prompt, targetScenes) {
+  const sentences = cleanText(prompt)
+    .split(/(?<=[.!?])\s+/)
+    .filter(Boolean);
+
+  const events = sentences.map((sentence, i) => ({
+    id: `G${i + 1}`,
+    type:
+      i === 0
+        ? "setup"
+        : /finally|by morning|safe|saved|returns home|reunited/i.test(sentence)
+        ? "resolution"
+        : /discover|find|notice|see|hear|realize|learn/i.test(sentence)
+        ? "discovery"
+        : /decide|plan|choose|try|attempt|begin/i.test(sentence)
+        ? "decision"
+        : /storm|danger|attack|trapped|lost|fire|accident|threat/i.test(sentence)
+        ? "conflict"
+        : /help|rescue|give|call|repair|build|carry|protect|search|climb|run|walk|drive|enter|leave/i.test(sentence)
+        ? "action"
+        : "story",
+    action: sentence,
+    characters: extractCharacters(sentence),
+    location: extractLocation(sentence),
+    props: extractProps(sentence),
+    dialogue: "We have to keep going.",
+    voiceover: sentence
+  }));
+
+  const expanded = [];
+
+  for (const event of events) {
+    expanded.push(event);
+
+    if (expanded.length < targetScenes) {
+      expanded.push({
+        ...event,
+        phase: "development",
+        action:
+          `Continue this exact story moment naturally without introducing a new event: ${event.action}`
+      });
+    }
+  }
+
+  while (expanded.length < targetScenes) {
+    const source =
+      events[(expanded.length - events.length) % events.length];
+
+    expanded.splice(expanded.length - 1, 0, {
+      ...source,
+      phase: "development",
+      action:
+        `Further develop this exact story moment without introducing a new event: ${source.action}`
+    });
+  }
+
+  return expanded.slice(0, targetScenes);
+}
+
+/* =========================================================
+   TIMELINE SELECTOR
+========================================================= */
+
+function buildTimeline(prompt, targetScenes) {
+  const lower = prompt.toLowerCase();
 
   const isNoahStory =
     lower.includes("14-year-old boy named noah") &&
@@ -635,63 +920,18 @@ function buildTimeline(text, targetScenes) {
     lower.includes("rescue boat");
 
   if (isNoahStory) {
-    const events = createNoahEvents();
-
-    /*
-      For Noah's story the 30 events are deliberately locked.
-      This prevents filler scenes and protects chronological order.
-    */
-    if (targetScenes === 30) {
-      return events;
-    }
-
-    if (targetScenes < 30) {
-      const selected = [];
-
-      for (let i = 0; i < targetScenes; i++) {
-        const position =
-          Math.round(
-            (i * (events.length - 1)) /
-              Math.max(1, targetScenes - 1)
-          );
-
-        selected.push(events[position]);
-      }
-
-      return selected;
-    }
-
-    const expanded = [...events];
-
-    while (expanded.length < targetScenes) {
-      const insertIndex = Math.max(1, expanded.length - 1);
-
-      const source = events[
-        (expanded.length - 1) % Math.max(1, events.length - 1)
-      ];
-
-      expanded.splice(insertIndex, 0, {
-        ...source,
-        id: `EXP-${expanded.length + 1}`,
-        phase: "development",
-        action:
-          `Further develop this exact story event without introducing a new event: ${source.action}`,
-        voiceover: source.voiceover
-      });
-    }
-
-    return expanded.slice(0, targetScenes);
+    return buildNoahTimeline(targetScenes);
   }
 
-  return buildGenericTimeline(text, targetScenes);
+  return buildGenericTimeline(prompt, targetScenes);
 }
 
-/* =========================
-   SMART CAMERA
-========================= */
+/* =========================================================
+   CAMERA
+========================================================= */
 
 function cameraForScene(event, index, total) {
-  const action = `${event.action} ${event.type}`.toLowerCase();
+  const text = `${event.action} ${event.phase || ""}`.toLowerCase();
 
   if (index === 0) {
     return "Wide cinematic establishing shot followed by a gentle push toward the main character.";
@@ -701,50 +941,54 @@ function cameraForScene(event, index, total) {
     return "Wide emotional establishing shot followed by a slow cinematic push toward the completed story outcome.";
   }
 
-  if (/discover|journal|find|notice|realize/i.test(action)) {
+  if (/notice|discover|journal|warning|signal|damage/i.test(text)) {
     return "Cinematic medium close-up with a controlled push-in emphasizing the discovery.";
   }
 
-  if (/storm|danger|conflict|climb|repair|rescue/i.test(action)) {
+  if (/storm|wind|rain|climb|repair|rescue|danger/i.test(text)) {
     return "Dynamic cinematic tracking shot with controlled movement emphasizing the developing action.";
+  }
+
+  if (/morning|aftermath|safe|villagers gather/i.test(text)) {
+    return "Wide cinematic shot with a slow controlled movement emphasizing the peaceful aftermath.";
   }
 
   return "Natural cinematic medium shot with subtle camera movement.";
 }
 
-/* =========================
-   SMART LIGHTING
-========================= */
+/* =========================================================
+   LIGHTING
+========================================================= */
 
 function lightingForScene(event) {
-  const text = `${event.action} ${event.location}`.toLowerCase();
+  const text = `${event.action} ${event.location} ${event.phase || ""}`.toLowerCase();
 
-  if (/morning|sunrise|by morning|passed|safe/.test(text)) {
-    return "Peaceful morning or sunrise lighting, soft golden daylight, realistic shadows and fresh post-storm atmosphere.";
+  if (/storm|wind|rain|dark cloud|danger|lighthouse signal.*out/i.test(text)) {
+    return "Dramatic overcast storm lighting with dark clouds, realistic atmospheric depth, natural shadows and weather-appropriate visibility.";
   }
 
-  if (/storm|rain|dark cloud|wind|danger/.test(text)) {
-    return "Dramatic overcast storm lighting with realistic atmospheric depth, dark clouds, natural shadows and weather-appropriate visibility.";
+  if (/morning|sunrise|by morning|passed|peaceful aftermath|safe now/i.test(text)) {
+    return "Peaceful morning or sunrise lighting with soft golden daylight, realistic shadows and a fresh post-storm atmosphere.";
   }
 
-  if (/lighthouse/.test(text)) {
-    return "Moody cinematic storm lighting outside with practical lighthouse illumination inside.";
+  if (/lighthouse/i.test(text)) {
+    return "Moody storm lighting outside with practical lighthouse illumination inside and realistic contrast.";
   }
 
-  if (/workshop/.test(text)) {
-    return "Natural warm daylight entering the workshop with realistic soft shadows.";
+  if (/workshop/i.test(text)) {
+    return "Natural warm morning daylight entering the workshop with realistic soft shadows.";
   }
 
   return "Natural cinematic lighting appropriate to the exact story moment and location.";
 }
 
-/* =========================
-   SCENE CREATOR
-========================= */
+/* =========================================================
+   SCENE BUILDER
+========================================================= */
 
-function createScenes(timeline, totalDuration, aspectRatio) {
+function createScenes(timeline, aspectRatio) {
   return timeline.map((event, index) => {
-    const time = sceneTimes(index);
+    const times = sceneTimes(index);
 
     const characters =
       event.characters && event.characters.length
@@ -753,14 +997,10 @@ function createScenes(timeline, totalDuration, aspectRatio) {
 
     const props = unique(event.props || []);
 
-    const characterDescriptions = extractCharacters(
-      characters.join(" ")
-    );
-
-    const characterLock = characterDescriptions
+    const characterLock = characters
       .map(
-        c =>
-          `${c.name}: ${c.description} Exact appearance must remain unchanged.`
+        name =>
+          `${name}: ${getCharacter(name)} Exact appearance must remain unchanged.`
       )
       .join(" ");
 
@@ -777,7 +1017,7 @@ ${event.action}
 
 Active characters: ${characters.join(", ")}.
 Location: ${event.location}.
-Relevant props: ${propText}
+Relevant props: ${propText}.
 
 CHARACTER LOCK:
 ${characterLock}
@@ -794,6 +1034,8 @@ Do not introduce a character before the story action requires that character to 
 
 Preserve chronological story order.
 
+Do not repeat an earlier story event unless this scene explicitly continues the same immediate moment.
+
 Realistic movement, natural facial expressions and believable physical behavior.
 
 Scene ${index + 1} of ${timeline.length}.
@@ -801,12 +1043,12 @@ Scene ${index + 1} of ${timeline.length}.
 
     return {
       scene_number: index + 1,
-      start_time: time.start_time,
-      end_time: time.end_time,
+      start_time: times.start_time,
+      end_time: times.end_time,
       visual_prompt: visualPrompt,
       camera: cameraForScene(event, index, timeline.length),
       lighting: lightingForScene(event),
-      action: event.action,
+      action: cleanText(event.action),
       dialogue: cleanText(event.dialogue),
       voiceover: cleanText(event.voiceover),
       continuity:
@@ -814,14 +1056,14 @@ Scene ${index + 1} of ${timeline.length}.
           ? "Opening scene. Establish the story and lock all main character identities."
           : index === timeline.length - 1
           ? "Final scene. Complete the actual story ending and preserve established continuity."
-          : `Continue directly from Scene ${index}. Preserve exact character identity, clothing, location and relevant story elements.`
+          : `Continue directly from Scene ${index}. Preserve exact character identity, clothing, location and immediate story progression.`
     };
   });
 }
 
-/* =========================
-   PROJECT CREATOR
-========================= */
+/* =========================================================
+   PROJECT
+========================================================= */
 
 function createProject(body = {}) {
   const prompt = cleanText(body.prompt || "");
@@ -840,14 +1082,14 @@ function createProject(body = {}) {
 
   const scenes = createScenes(
     timeline,
-    duration,
     aspectRatio
   );
 
   return {
     success: true,
+    version: "V17",
     mode: "demo",
-    version: "V16",
+    gemini: false,
     duration,
     total_scenes: scenes.length,
     aspect_ratio: aspectRatio,
@@ -856,30 +1098,29 @@ function createProject(body = {}) {
   };
 }
 
-/* =========================
+/* =========================================================
    ROUTES
-========================= */
+========================================================= */
 
 app.get("/", (req, res) => {
-  res.send("SANAPTAI V16 is live");
+  res.send("SANAPTAI V17 is live");
 });
 
 app.get("/api/test", (req, res) => {
   res.json({
     success: true,
-    version: "V16",
-    engine: "Universal Story Event Timeline Engine",
+    version: "V17",
+    engine: "Chronological Long-Form Story Expansion Engine",
     demo_mode: true,
     gemini: false,
     exact_scene_duration: "10 seconds",
-    long_form: true
+    supported_long_form: ["30 scenes", "60 scenes", "120 scenes"]
   });
 });
 
 app.post("/api/demo-project", (req, res) => {
   try {
-    const project = createProject(req.body);
-    res.json(project);
+    res.json(createProject(req.body));
   } catch (error) {
     console.error(error);
 
@@ -892,8 +1133,7 @@ app.post("/api/demo-project", (req, res) => {
 
 app.post("/api/create-project", (req, res) => {
   try {
-    const project = createProject(req.body);
-    res.json(project);
+    res.json(createProject(req.body));
   } catch (error) {
     console.error(error);
 
@@ -904,18 +1144,14 @@ app.post("/api/create-project", (req, res) => {
   }
 });
 
-/*
-  Gemini is intentionally disabled for now.
-  This prevents quota usage while testing the local story engine.
-*/
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
     success: false,
     message:
-      "AI planning is reserved for a future SANAPTAI version. Demo Mode is active and does not use Gemini."
+      "AI planning is reserved for a future SANAPTAI version. Demo Mode does not use Gemini."
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`SANAPTAI V16 running on port ${PORT}`);
+  console.log(`SANAPTAI V17 running on port ${PORT}`);
 });
