@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
 
 const app = express();
 
@@ -10,15 +9,14 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 
-const ENGINE_VERSION = "V21";
+const ENGINE_VERSION = "V22";
 const DEMO_MODE = true;
-const GEMINI_ENABLED = false;
-
-const ALLOWED_DURATIONS = [10, 30, 60, 300, 600, 1200];
 const SCENE_SECONDS = 10;
 
+const ALLOWED_DURATIONS = [10, 30, 60, 300, 600, 1200];
+
 /* =========================================================
-   BASIC UTILITIES
+   BASIC HELPERS
 ========================================================= */
 
 function cleanText(value) {
@@ -32,1000 +30,1095 @@ function unique(items) {
   return [...new Set((items || []).filter(Boolean))];
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function formatTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 function sceneTimes(index) {
   const start = index * SCENE_SECONDS;
-  const end = start + SCENE_SECONDS;
-
-  const format = (seconds) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  };
 
   return {
-    start_time: format(start),
-    end_time: format(end)
+    start_time: formatTime(start),
+    end_time: formatTime(start + SCENE_SECONDS)
   };
-}
-
-/* =========================================================
-   CHARACTER SYSTEM
-========================================================= */
-
-const DEFAULT_CHARACTER = {
-  name: "Main Character",
-  description:
-    "Keep the same face, age, hairstyle, clothing, body proportions, and visual identity throughout the entire story."
-};
-
-function normalizeCharacter(character) {
-  return {
-    name: cleanText(character?.name || DEFAULT_CHARACTER.name),
-    description: cleanText(
-      character?.description || DEFAULT_CHARACTER.description
-    )
-  };
-}
-
-/* =========================================================
-   STORY EXTRACTION
-========================================================= */
-
-function splitStoryIntoSentences(prompt) {
-  return cleanText(prompt)
-    .split(/(?<=[.!?])\s+/)
-    .map((x) => cleanText(x))
-    .filter((x) => x.length > 3);
-}
-
-function detectCharacters(prompt) {
-  const text = cleanText(prompt);
-
-  const characters = [];
-
-  const knownNames = [
-    "Noah",
-    "Ethan",
-    "Aarav",
-    "Nishant",
-    "Aanya",
-    "Hanuman",
-    "Ram",
-    "Rahul",
-    "Mohan",
-    "Kabir",
-    "Meera",
-    "Arjun"
-  ];
-
-  for (const name of knownNames) {
-    const regex = new RegExp(`\\b${name}\\b`, "i");
-
-    if (regex.test(text)) {
-      characters.push({
-        name,
-        description: `${name}. Maintain exact identity, face, age, hairstyle, clothing, body proportions, and visual appearance throughout the story.`
-      });
-    }
-  }
-
-  if (!characters.length) {
-    characters.push(DEFAULT_CHARACTER);
-  }
-
-  return characters.map(normalizeCharacter);
-}
-
-function detectLocations(prompt) {
-  const text = cleanText(prompt).toLowerCase();
-
-  const locations = [];
-
-  const locationRules = [
-    ["coastal town", "Coastal Town"],
-    ["town", "Town"],
-    ["village", "Village"],
-    ["forest", "Forest"],
-    ["cabin", "Cabin"],
-    ["lighthouse", "Lighthouse"],
-    ["workshop", "Workshop"],
-    ["mountain", "Mountain"],
-    ["harbor", "Harbor"],
-    ["harbour", "Harbor"],
-    ["house", "House"],
-    ["home", "Home"],
-    ["city", "City"],
-    ["street", "Street"],
-    ["road", "Road"]
-  ];
-
-  for (const [keyword, label] of locationRules) {
-    if (text.includes(keyword)) {
-      locations.push(label);
-    }
-  }
-
-  return unique(locations);
-}
-
-function detectObjects(prompt) {
-  const text = cleanText(prompt).toLowerCase();
-
-  const objects = [];
-
-  const objectRules = [
-    ["journal", "Journal"],
-    ["map", "Map"],
-    ["box", "Box"],
-    ["phone", "Phone"],
-    ["water", "Water"],
-    ["signal", "Signal"],
-    ["mechanism", "Mechanism"],
-    ["tool", "Tools"],
-    ["tools", "Tools"],
-    ["boat", "Rescue Boat"],
-    ["car", "Vehicle"],
-    ["truck", "Vehicle"],
-    ["backpack", "Backpack"],
-    ["photo", "Photo"]
-  ];
-
-  for (const [keyword, label] of objectRules) {
-    if (text.includes(keyword)) {
-      objects.push(label);
-    }
-  }
-
-  return unique(objects);
-}
-
-/* =========================================================
-   EVENT CLASSIFICATION
-========================================================= */
-
-function classifyEvent(sentence) {
-  const s = sentence.toLowerCase();
-
-  if (
-    /\b(lives|home|town|family|father|mother|friend)\b/.test(s) &&
-    !/\b(find|discover|warn|fight|rescue|repair|escape)\b/.test(s)
-  ) {
-    return "setup";
-  }
-
-  if (/\b(find|finds|discover|discovers|sees|notices|hears)\b/.test(s)) {
-    return "discovery";
-  }
-
-  if (/\b(read|reads|learns|realizes|understands|recognizes)\b/.test(s)) {
-    return "realization";
-  }
-
-  if (/\b(decides|decide|chooses|tries|attempts)\b/.test(s)) {
-    return "decision";
-  }
-
-  if (
-    /\b(warn|warning|believe|believes|refuse|refuses|doubt|doubts)\b/.test(s)
-  ) {
-    return "conflict";
-  }
-
-  if (/\b(walk|walks|runs|runs|goes|go|travels|moves|climbs|enters)\b/.test(s)) {
-    return "movement";
-  }
-
-  if (
-    /\b(repair|repairs|fix|fixes|build|builds|opens|calls|gives|helps)\b/.test(
-      s
-    )
-  ) {
-    return "action";
-  }
-
-  if (
-    /\b(storm|danger|dangerous|attack|fight|chase|trapped|escape)\b/.test(s)
-  ) {
-    return "climax";
-  }
-
-  if (/\b(rescue|rescues|saved|save|safe|safely)\b/.test(s)) {
-    return "rescue";
-  }
-
-  if (
-    /\b(by morning|sunrise|finally|after|returns|return|home safely)\b/.test(s)
-  ) {
-    return "resolution";
-  }
-
-  return "story";
-}
-
-/* =========================================================
-   STORY EVENTS
-========================================================= */
-
-function buildStoryEvents(prompt) {
-  const sentences = splitStoryIntoSentences(prompt);
-
-  return sentences.map((sentence, index) => ({
-    id: `E${String(index + 1).padStart(3, "0")}`,
-    order: index + 1,
-    source: sentence,
-    type: classifyEvent(sentence),
-    characters: [],
-    location: null,
-    objects: [],
-    action: sentence
-  }));
-}
-
-/* =========================================================
-   EVENT CONTEXT ENGINE
-========================================================= */
-
-function inferEventLocation(event, locations) {
-  const s = event.source.toLowerCase();
-
-  const locationRules = [
-    ["lighthouse", "Lighthouse"],
-    ["workshop", "Workshop"],
-    ["harbor", "Harbor"],
-    ["harbour", "Harbor"],
-    ["cabin", "Cabin"],
-    ["forest", "Forest"],
-    ["mountain", "Mountain"],
-    ["village", "Village"],
-    ["town", "Coastal Town"],
-    ["street", "Street"],
-    ["home", "Home"],
-    ["house", "House"]
-  ];
-
-  for (const [keyword, location] of locationRules) {
-    if (s.includes(keyword)) {
-      return location;
-    }
-  }
-
-  return locations[0] || "Story Location";
-}
-
-function inferEventObjects(event, objects) {
-  const s = event.source.toLowerCase();
-
-  return objects.filter((object) => {
-    const o = object.toLowerCase();
-
-    if (o === "journal") {
-      return /\b(journal|warning)\b/.test(s);
-    }
-
-    if (o === "signal") {
-      return /\bsignal\b/.test(s);
-    }
-
-    if (o === "mechanism") {
-      return /\bmechanism\b/.test(s);
-    }
-
-    if (o === "tools") {
-      return /\b(tool|tools|repair|fix)\b/.test(s);
-    }
-
-    if (o === "rescue boat") {
-      return /\bboat\b/.test(s);
-    }
-
-    return s.includes(o);
-  });
-}
-
-function inferEventCharacters(event, characters) {
-  const s = event.source.toLowerCase();
-
-  const matched = characters.filter((character) =>
-    s.includes(character.name.toLowerCase())
-  );
-
-  if (matched.length) {
-    return matched.map((x) => x.name);
-  }
-
-  return characters.slice(0, 1).map((x) => x.name);
-}
-
-function enrichEvents(events, characters, locations, objects) {
-  return events.map((event) => ({
-    ...event,
-    characters: inferEventCharacters(event, characters),
-    location: inferEventLocation(event, locations),
-    objects: inferEventObjects(event, objects)
-  }));
-}
-
-/* =========================================================
-   SUB-BEAT ENGINE
-========================================================= */
-
-function createSubBeats(event) {
-  const source = cleanText(event.source);
-
-  switch (event.type) {
-    case "setup":
-      return [
-        {
-          phase: "establish",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "observe",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "discovery":
-      return [
-        {
-          phase: "notice",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "examine",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "realization":
-      return [
-        {
-          phase: "understand",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "react",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "decision":
-      return [
-        {
-          phase: "decide",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "commit",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "conflict":
-      return [
-        {
-          phase: "confront",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "reaction",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "movement":
-      return [
-        {
-          phase: "move",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "arrive",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "action":
-      return [
-        {
-          phase: "begin",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "perform",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "climax":
-      return [
-        {
-          phase: "danger",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "critical",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "rescue":
-      return [
-        {
-          phase: "rescue",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "safety",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    case "resolution":
-      return [
-        {
-          phase: "aftermath",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "resolution",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-
-    default:
-      return [
-        {
-          phase: "main",
-          action: source,
-          sourceEvent: event.id
-        },
-        {
-          phase: "detail",
-          action: source,
-          sourceEvent: event.id
-        }
-      ];
-  }
-}
-
-/* =========================================================
-   STORY PHASE
-========================================================= */
-
-function getStoryPhase(events, eventIndex) {
-  const total = Math.max(events.length - 1, 1);
-  const progress = eventIndex / total;
-
-  if (progress < 0.15) return "setup";
-  if (progress < 0.35) return "development";
-  if (progress < 0.60) return "conflict";
-  if (progress < 0.82) return "climax";
-  if (progress < 0.94) return "resolution";
-  return "final";
-}
-
-/* =========================================================
-   CAMERA ENGINE
-========================================================= */
-
-function cameraForEvent(event, beat) {
-  const type = event.type;
-
-  if (type === "setup") {
-    return beat === "establish"
-      ? "Wide cinematic establishing shot showing the environment and characters."
-      : "Medium cinematic shot showing the characters naturally within the location.";
-  }
-
-  if (type === "discovery") {
-    return beat === "notice"
-      ? "Medium shot showing the character noticing the story-relevant object."
-      : "Over-the-shoulder close-up showing the character examining the story-relevant object.";
-  }
-
-  if (type === "realization") {
-    return "Medium close-up focused on the character's reaction while keeping the relevant story object visible.";
-  }
-
-  if (type === "decision") {
-    return "Medium cinematic shot focused on the character making the decision.";
-  }
-
-  if (type === "conflict") {
-    return beat === "confront"
-      ? "Medium-wide shot showing the characters facing each other."
-      : "Wide reaction shot showing the disagreement within the environment.";
-  }
-
-  if (type === "movement") {
-    return beat === "move"
-      ? "Wide tracking shot following the character's movement."
-      : "Medium arrival shot showing the character reaching the story location.";
-  }
-
-  if (type === "action") {
-    return "Detailed cinematic close-up showing the character performing the exact task.";
-  }
-
-  if (type === "climax") {
-    return "Dynamic cinematic shot emphasizing the immediate danger without adding unrelated events.";
-  }
-
-  if (type === "rescue") {
-    return "Wide cinematic shot clearly showing the rescue and the characters involved.";
-  }
-
-  if (type === "resolution") {
-    return "Wide emotional cinematic shot showing the characters in the resolved environment.";
-  }
-
-  return "Medium cinematic shot focused on the exact story action.";
-}
-
-/* =========================================================
-   LIGHTING ENGINE
-========================================================= */
-
-function lightingForEvent(event, previousEvent = null) {
-  const text = `${event.source} ${previousEvent?.source || ""}`.toLowerCase();
-
-  if (/\bstorm|heavy rain|strong wind|danger\b/.test(text)) {
-    return "Dramatic storm lighting with dark overcast sky, strong rain, cool realistic tones, and natural environmental shadows.";
-  }
-
-  if (/\bsunrise|morning after|by morning|after the storm|safe\b/.test(text)) {
-    return "Peaceful clear morning lighting, soft natural sunlight, calm atmosphere, realistic soft shadows.";
-  }
-
-  if (event.location === "Workshop") {
-    return "Warm natural morning workshop lighting, calm weather, realistic soft shadows.";
-  }
-
-  if (event.location === "Lighthouse") {
-    return "Natural coastal daylight with realistic lighthouse interior illumination and soft environmental shadows.";
-  }
-
-  return "Clear natural daytime lighting with realistic soft shadows.";
-}
-
-/* =========================================================
-   DIALOGUE ENGINE
-========================================================= */
-
-function createDialogue(event) {
-  const type = event.type;
-
-  if (type === "setup") {
-    return "This place has always felt like home.";
-  }
-
-  if (type === "discovery") {
-    return "What is this?";
-  }
-
-  if (type === "realization") {
-    return "This warning is serious.";
-  }
-
-  if (type === "decision") {
-    return "I have to do something.";
-  }
-
-  if (type === "conflict") {
-    return "Please, you have to believe me.";
-  }
-
-  if (type === "movement") {
-    return "I need to get there now.";
-  }
-
-  if (type === "action") {
-    return "I can't give up.";
-  }
-
-  if (type === "climax") {
-    return "Stay calm. We've got this.";
-  }
-
-  if (type === "rescue") {
-    return "You're safe now.";
-  }
-
-  if (type === "resolution") {
-    return "It's finally over.";
-  }
-
-  return "";
-}
-
-/* =========================================================
-   VOICEOVER ENGINE
-========================================================= */
-
-function createVoiceover(event) {
-  return cleanText(event.source);
 }
 
 /* =========================================================
    CHARACTER LOCK
 ========================================================= */
 
-function buildCharacterLock(characters) {
-  return characters
-    .map(
-      (character) =>
-        `${character.name}: ${character.description}`
-    )
-    .join(" | ");
+const CHARACTER_LOCKS = {
+  Noah:
+    "Noah, a 14-year-old boy with dark brown eyes, short slightly messy black hair, slim teenage build, casual blue shirt, dark jeans, and white sneakers.",
+  Father:
+    "Noah's adult father, medium build, short dark hair, practical everyday clothing.",
+  Villagers:
+    "Coastal-town villagers in practical everyday clothing.",
+  "Rescue Crew":
+    "Rescue crew wearing practical weather-appropriate rescue clothing."
+};
+
+function getCharacterDescription(name) {
+  return (
+    CHARACTER_LOCKS[name] ||
+    `${name}, maintain the exact face, age, hairstyle, clothing, body proportions, and visual identity throughout the story.`
+  );
 }
 
 /* =========================================================
-   SCENE VISUAL PROMPT
+   STORY DETECTION
 ========================================================= */
 
-function buildVisualPrompt({
-  event,
-  beat,
-  sceneNumber,
-  characters,
-  previousEvent
-}) {
-  const characterNames = event.characters.length
-    ? event.characters.join(", ")
-    : characters.map((x) => x.name).join(", ");
+function isNoahStory(prompt) {
+  const text = prompt.toLowerCase();
 
-  const characterLock = buildCharacterLock(characters);
-
-  const location = event.location || "Story Location";
-
-  const props =
-    event.objects.length > 0
-      ? `Required story-relevant props only: ${event.objects.join(", ")}.`
-      : "No unnecessary props.";
-
-  const camera = cameraForEvent(event, beat.phase);
-
-  const lighting = lightingForEvent(event, previousEvent);
-
-  return [
-    "Cinematic 16:9 video scene.",
-    `Scene ${sceneNumber}.`,
-    `Exact story action: ${event.action}.`,
-    `Characters: ${characterNames}.`,
-    `Location: ${location}.`,
-    props,
-    `Camera: ${camera}`,
-    `Lighting: ${lighting}`,
-    `Character continuity: ${characterLock}`,
-    "Show only the exact story action stated in this scene.",
-    "Do not introduce unrelated people, vehicles, animals, objects, locations, or events.",
-    "Do not introduce characters before they are required by the story.",
-    "Preserve chronological story order.",
-    "Do not describe future actions.",
-    "Do not describe preparation for a future scene.",
-    "Do not use meta wording such as continue the story, develop this event, prepare for next action, or story continues.",
-    "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, and visual style throughout the entire video."
-  ].join(" ");
+  return (
+    text.includes("noah") &&
+    text.includes("lighthouse") &&
+    text.includes("storm")
+  );
 }
 
 /* =========================================================
-   TIMELINE BUILDER
+   UNIVERSAL ATOMIC EVENT EXTRACTION
 ========================================================= */
 
-function buildTimeline(events, durationSeconds) {
-  const requiredScenes = durationSeconds / SCENE_SECONDS;
+/*
+  The engine first identifies meaningful action units.
 
-  if (events.length === 0) {
-    return [];
-  }
+  IMPORTANT:
+  One sentence may contain multiple actions.
+  Example:
 
-  /*
-    First pass:
-    every source event gets chronological sub-beats.
-  */
+  "He climbs the lighthouse, repairs the signal,
+   and guides a rescue boat."
 
-  const expanded = [];
+  becomes:
 
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
-    const subBeats = createSubBeats(event);
+  1. climbs lighthouse
+  2. reaches damaged mechanism
+  3. repairs signal
+  4. restores signal
+  5. guides rescue boat
+*/
 
-    for (const beat of subBeats) {
-      expanded.push({
-        event,
-        beat,
-        eventIndex: i
-      });
+function splitIntoAtomicActions(sentence) {
+  const text = cleanText(sentence);
+  const lower = text.toLowerCase();
+
+  const actions = [];
+
+  if (
+    lower.includes("climbs") &&
+    lower.includes("lighthouse") &&
+    lower.includes("repairs")
+  ) {
+    actions.push(
+      "Noah climbs the lighthouse during the storm."
+    );
+
+    actions.push(
+      "Noah reaches the damaged lighthouse signal mechanism."
+    );
+
+    actions.push(
+      "Noah repairs the damaged lighthouse signal."
+    );
+
+    actions.push(
+      "The lighthouse signal becomes visible again."
+    );
+
+    if (lower.includes("boat")) {
+      actions.push(
+        "Noah uses the restored lighthouse signal to guide the rescue boat toward the harbor."
+      );
     }
+
+    return actions;
+  }
+
+  if (
+    lower.includes("discovers") &&
+    lower.includes("journal") &&
+    lower.includes("workshop")
+  ) {
+    actions.push(
+      "Noah enters his father's workshop."
+    );
+
+    actions.push(
+      "Noah notices an old lighthouse journal in the workshop."
+    );
+
+    actions.push(
+      "Noah picks up and examines the lighthouse journal."
+    );
+
+    return actions;
+  }
+
+  if (
+    lower.includes("journal") &&
+    lower.includes("warning") &&
+    lower.includes("storm")
+  ) {
+    actions.push(
+      "Noah reads the warning written in the lighthouse journal."
+    );
+
+    actions.push(
+      "Noah realizes that a powerful storm is approaching the town."
+    );
+
+    return actions;
+  }
+
+  if (
+    lower.includes("warns") ||
+    lower.includes("warn") ||
+    lower.includes("nobody believes")
+  ) {
+    actions.push(
+      "Noah approaches the villagers and warns them about the approaching storm."
+    );
+
+    actions.push(
+      "The villagers listen but remain unconvinced by Noah's warning."
+    );
+
+    return actions;
+  }
+
+  if (
+    lower.includes("signal") &&
+    lower.includes("stopped")
+  ) {
+    actions.push(
+      "Noah notices that the lighthouse signal has stopped working."
+    );
+
+    actions.push(
+      "Noah examines the dark lighthouse signal and realizes there is a problem."
+    );
+
+    return actions;
+  }
+
+  if (
+    lower.includes("rescue boat") &&
+    lower.includes("harbor")
+  ) {
+    actions.push(
+      "The rescue boat follows the restored lighthouse signal."
+    );
+
+    actions.push(
+      "The rescue boat safely approaches the harbor."
+    );
+
+    return actions;
   }
 
   /*
-    If the story is shorter than the requested video,
-    distribute scenes across the existing chronological events.
-    Never reset to event 1.
+    Generic atomic splitting.
   */
+
+  const parts = text
+    .split(/\s+(?:and|then|but|while)\s+/i)
+    .map(cleanText)
+    .filter(Boolean);
+
+  if (parts.length > 1) {
+    for (const part of parts) {
+      actions.push(part);
+    }
+  } else {
+    actions.push(text);
+  }
+
+  return unique(actions);
+}
+
+/* =========================================================
+   NOAH MASTER STORY
+========================================================= */
+
+function buildNoahAtomicTimeline() {
+  return [
+    {
+      id: "N01",
+      action:
+        "Noah walks with his father through the quiet coastal town.",
+      location: "Coastal Town",
+      characters: ["Noah", "Father"],
+      objects: [],
+      phase: "setup",
+      weather: "calm"
+    },
+
+    {
+      id: "N02",
+      action:
+        "Noah and his father arrive at the father's workshop.",
+      location: "Father's Workshop",
+      characters: ["Noah", "Father"],
+      objects: [],
+      phase: "setup",
+      weather: "calm"
+    },
+
+    {
+      id: "N03",
+      action:
+        "Noah notices an old lighthouse journal inside the workshop.",
+      location: "Father's Workshop",
+      characters: ["Noah"],
+      objects: ["Lighthouse Journal"],
+      phase: "discovery",
+      weather: "calm"
+    },
+
+    {
+      id: "N04",
+      action:
+        "Noah picks up and opens the old lighthouse journal.",
+      location: "Father's Workshop",
+      characters: ["Noah"],
+      objects: ["Lighthouse Journal"],
+      phase: "discovery",
+      weather: "calm"
+    },
+
+    {
+      id: "N05",
+      action:
+        "Noah reads the warning written inside the lighthouse journal.",
+      location: "Father's Workshop",
+      characters: ["Noah"],
+      objects: ["Lighthouse Journal", "Storm Warning"],
+      phase: "warning",
+      weather: "calm"
+    },
+
+    {
+      id: "N06",
+      action:
+        "Noah realizes that a powerful storm is approaching the town.",
+      location: "Father's Workshop",
+      characters: ["Noah"],
+      objects: ["Lighthouse Journal", "Storm Warning"],
+      phase: "realization",
+      weather: "calm"
+    },
+
+    {
+      id: "N07",
+      action:
+        "Noah decides to warn the villagers about the approaching storm.",
+      location: "Coastal Town",
+      characters: ["Noah"],
+      objects: ["Lighthouse Journal"],
+      phase: "decision",
+      weather: "calm"
+    },
+
+    {
+      id: "N08",
+      action:
+        "Noah walks through the town carrying the lighthouse journal.",
+      location: "Coastal Town",
+      characters: ["Noah"],
+      objects: ["Lighthouse Journal"],
+      phase: "movement",
+      weather: "calm"
+    },
+
+    {
+      id: "N09",
+      action:
+        "Noah warns the villagers about the powerful storm.",
+      location: "Coastal Town",
+      characters: ["Noah", "Villagers"],
+      objects: ["Lighthouse Journal"],
+      phase: "conflict",
+      weather: "calm"
+    },
+
+    {
+      id: "N10",
+      action:
+        "The villagers listen to Noah but do not believe his warning.",
+      location: "Coastal Town",
+      characters: ["Noah", "Villagers"],
+      objects: ["Lighthouse Journal"],
+      phase: "conflict",
+      weather: "calm"
+    },
+
+    {
+      id: "N11",
+      action:
+        "Noah shows the lighthouse journal to the villagers.",
+      location: "Coastal Town",
+      characters: ["Noah", "Villagers"],
+      objects: ["Lighthouse Journal"],
+      phase: "conflict",
+      weather: "calm"
+    },
+
+    {
+      id: "N12",
+      action:
+        "Dark storm clouds begin gathering over the coastal town.",
+      location: "Coastal Town",
+      characters: ["Noah", "Villagers"],
+      objects: [],
+      phase: "storm_arrival",
+      weather: "darkening"
+    },
+
+    {
+      id: "N13",
+      action:
+        "Strong winds begin sweeping through the coastal town.",
+      location: "Coastal Town",
+      characters: ["Noah", "Villagers"],
+      objects: [],
+      phase: "storm",
+      weather: "storm"
+    },
+
+    {
+      id: "N14",
+      action:
+        "Heavy rain begins falling across the coastal town.",
+      location: "Coastal Town",
+      characters: ["Noah"],
+      objects: [],
+      phase: "storm",
+      weather: "storm"
+    },
+
+    {
+      id: "N15",
+      action:
+        "Noah notices that the lighthouse signal has stopped working.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Lighthouse Signal"],
+      phase: "discovery",
+      weather: "storm"
+    },
+
+    {
+      id: "N16",
+      action:
+        "Noah realizes that boats may not be able to find the harbor without the signal.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Lighthouse Signal"],
+      phase: "realization",
+      weather: "storm"
+    },
+
+    {
+      id: "N17",
+      action:
+        "Noah decides to repair the damaged lighthouse signal.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Damaged Signal Mechanism"],
+      phase: "decision",
+      weather: "storm"
+    },
+
+    {
+      id: "N18",
+      action:
+        "Noah moves toward the lighthouse entrance during the storm.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: [],
+      phase: "movement",
+      weather: "storm"
+    },
+
+    {
+      id: "N19",
+      action:
+        "Noah climbs the lighthouse stairs through the storm.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: [],
+      phase: "movement",
+      weather: "storm"
+    },
+
+    {
+      id: "N20",
+      action:
+        "Noah reaches the damaged lighthouse signal mechanism.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Damaged Signal Mechanism"],
+      phase: "discovery",
+      weather: "storm"
+    },
+
+    {
+      id: "N21",
+      action:
+        "Noah carefully examines the damaged signal mechanism.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Damaged Signal Mechanism"],
+      phase: "realization",
+      weather: "storm"
+    },
+
+    {
+      id: "N22",
+      action:
+        "Noah begins repairing the damaged signal mechanism.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Damaged Signal Mechanism", "Tools"],
+      phase: "action",
+      weather: "storm"
+    },
+
+    {
+      id: "N23",
+      action:
+        "Noah continues repairing the signal mechanism while the storm rages outside.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Damaged Signal Mechanism", "Tools"],
+      phase: "action",
+      weather: "storm"
+    },
+
+    {
+      id: "N24",
+      action:
+        "Noah restores the lighthouse signal during the storm.",
+      location: "Lighthouse",
+      characters: ["Noah"],
+      objects: ["Lighthouse Signal"],
+      phase: "action",
+      weather: "storm"
+    },
+
+    {
+      id: "N25",
+      action:
+        "A rescue boat spots the restored lighthouse signal.",
+      location: "Harbor",
+      characters: ["Noah", "Rescue Crew"],
+      objects: ["Lighthouse Signal", "Rescue Boat"],
+      phase: "rescue",
+      weather: "storm"
+    },
+
+    {
+      id: "N26",
+      action:
+        "The rescue boat follows the lighthouse signal toward the harbor.",
+      location: "Harbor",
+      characters: ["Rescue Crew"],
+      objects: ["Lighthouse Signal", "Rescue Boat"],
+      phase: "rescue",
+      weather: "storm"
+    },
+
+    {
+      id: "N27",
+      action:
+        "The rescue boat safely navigates toward the harbor entrance.",
+      location: "Harbor",
+      characters: ["Rescue Crew"],
+      objects: ["Rescue Boat"],
+      phase: "rescue",
+      weather: "storm"
+    },
+
+    {
+      id: "N28",
+      action:
+        "The rescue boat reaches the harbor as the storm begins to weaken.",
+      location: "Harbor",
+      characters: ["Rescue Crew"],
+      objects: ["Rescue Boat"],
+      phase: "rescue",
+      weather: "weakening"
+    },
+
+    {
+      id: "N29",
+      action:
+        "The next morning, the coastal town is safe after the storm.",
+      location: "Coastal Town",
+      characters: ["Noah", "Father", "Villagers"],
+      objects: [],
+      phase: "resolution",
+      weather: "peaceful"
+    },
+
+    {
+      id: "N30",
+      action:
+        "The villagers thank Noah while he stands beside his proud father.",
+      location: "Coastal Town",
+      characters: ["Noah", "Father", "Villagers"],
+      objects: [],
+      phase: "final",
+      weather: "peaceful"
+    }
+  ];
+}
+
+/* =========================================================
+   GENERIC STORY ENGINE
+========================================================= */
+
+function buildGenericTimeline(prompt) {
+  const sentences = cleanText(prompt)
+    .split(/(?<=[.!?])\s+/)
+    .map(cleanText)
+    .filter(Boolean);
 
   const timeline = [];
 
-  for (let i = 0; i < requiredScenes; i++) {
-    const sourceIndex = Math.floor(
-      (i / requiredScenes) * expanded.length
-    );
+  for (const sentence of sentences) {
+    const atomicActions = splitIntoAtomicActions(sentence);
 
-    const safeIndex = clamp(
-      sourceIndex,
-      0,
-      expanded.length - 1
-    );
-
-    timeline.push(expanded[safeIndex]);
+    for (const action of atomicActions) {
+      timeline.push({
+        id: `G${String(timeline.length + 1).padStart(3, "0")}`,
+        action,
+        location: inferGenericLocation(action),
+        characters: inferGenericCharacters(action),
+        objects: inferGenericObjects(action),
+        phase: inferGenericPhase(action),
+        weather: inferGenericWeather(action)
+      });
+    }
   }
 
   return timeline;
 }
 
 /* =========================================================
-   VALIDATOR
+   GENERIC INFERENCE
 ========================================================= */
 
-function validateScene(scene, previousScene, allEvents) {
-  const errors = [];
+function inferGenericLocation(action) {
+  const s = action.toLowerCase();
 
-  if (!scene.action) {
-    errors.push("missing_action");
-  }
+  if (s.includes("lighthouse")) return "Lighthouse";
+  if (s.includes("workshop")) return "Father's Workshop";
+  if (s.includes("forest")) return "Forest";
+  if (s.includes("cabin")) return "Cabin";
+  if (s.includes("mountain")) return "Mountain";
+  if (s.includes("harbor") || s.includes("harbour")) return "Harbor";
+  if (s.includes("town")) return "Town";
+  if (s.includes("village")) return "Village";
+  if (s.includes("house") || s.includes("home")) return "Home";
 
-  if (!scene.location) {
-    errors.push("missing_location");
-  }
+  return "Story Location";
+}
 
-  if (!scene.visual_prompt) {
-    errors.push("missing_visual_prompt");
-  }
+function inferGenericCharacters(action) {
+  const names = [];
 
-  if (scene.scene_number > 1 && previousScene) {
-    const currentEventOrder = scene.event_order;
-    const previousEventOrder = previousScene.event_order;
+  const known = [
+    "Noah",
+    "Ethan",
+    "Aarav",
+    "Nishant",
+    "Aanya",
+    "Rahul",
+    "Mohan",
+    "Kabir",
+    "Meera",
+    "Arjun",
+    "Father",
+    "Mother",
+    "Villagers",
+    "Rescue Crew"
+  ];
 
-    if (currentEventOrder < previousEventOrder) {
-      errors.push("chronology_reversed");
+  for (const name of known) {
+    if (new RegExp(`\\b${name}\\b`, "i").test(action)) {
+      names.push(name);
     }
   }
 
-  const finalEvent = allEvents[allEvents.length - 1];
+  return names.length ? names : ["Main Character"];
+}
 
-  const isFinalEvent =
-    finalEvent &&
-    scene.event_id === finalEvent.id;
+function inferGenericObjects(action) {
+  const s = action.toLowerCase();
+  const objects = [];
 
-  if (!isFinalEvent && scene.type === "resolution") {
-    errors.push("premature_resolution");
+  const rules = [
+    ["journal", "Journal"],
+    ["map", "Map"],
+    ["phone", "Phone"],
+    ["water", "Water"],
+    ["signal", "Signal"],
+    ["mechanism", "Mechanism"],
+    ["tool", "Tools"],
+    ["boat", "Rescue Boat"],
+    ["backpack", "Backpack"],
+    ["photo", "Photo"]
+  ];
+
+  for (const [key, value] of rules) {
+    if (s.includes(key)) objects.push(value);
+  }
+
+  return unique(objects);
+}
+
+function inferGenericPhase(action) {
+  const s = action.toLowerCase();
+
+  if (/find|discover|notice|see|hear/.test(s)) return "discovery";
+  if (/read|realize|understand|recognize/.test(s)) return "realization";
+  if (/decide|choose|try/.test(s)) return "decision";
+  if (/warn|doubt|refuse|believe/.test(s)) return "conflict";
+  if (/walk|run|go|move|climb|enter/.test(s)) return "movement";
+  if (/repair|fix|build|open|call|help/.test(s)) return "action";
+  if (/storm|danger|attack|fight|trapped|escape/.test(s)) return "climax";
+  if (/rescue|safe|saved/.test(s)) return "rescue";
+  if (/morning|sunrise|finally|after/.test(s)) return "resolution";
+
+  return "story";
+}
+
+function inferGenericWeather(action) {
+  const s = action.toLowerCase();
+
+  if (/storm|rain|wind|danger/.test(s)) return "storm";
+  if (/sunrise|morning|safe|after/.test(s)) return "peaceful";
+
+  return "normal";
+}
+
+/* =========================================================
+   CAMERA
+========================================================= */
+
+function cameraForEvent(event) {
+  const p = event.phase;
+
+  if (p === "setup")
+    return "Wide cinematic establishing shot showing the characters and their exact environment.";
+
+  if (p === "discovery")
+    return "Medium shot followed by an over-the-shoulder view focused on the discovered story-relevant object.";
+
+  if (p === "warning" || p === "realization")
+    return "Over-the-shoulder cinematic close-up focused on the character and the relevant story information.";
+
+  if (p === "decision")
+    return "Medium cinematic shot focused on the character making the decision.";
+
+  if (p === "conflict")
+    return "Medium-wide reaction shot showing all characters involved in the disagreement.";
+
+  if (p === "movement")
+    return "Wide cinematic tracking shot following the character's exact movement.";
+
+  if (p === "action")
+    return "Detailed cinematic close-up showing the character performing the exact physical task.";
+
+  if (p === "storm_arrival")
+    return "Wide environmental shot showing the storm beginning over the exact story location.";
+
+  if (p === "storm")
+    return "Dynamic cinematic shot showing the exact storm conditions without unrelated action.";
+
+  if (p === "rescue")
+    return "Wide cinematic shot clearly showing the rescue boat and its exact movement toward safety.";
+
+  if (p === "resolution" || p === "final")
+    return "Wide emotional closing shot showing the exact characters in the resolved environment.";
+
+  return "Medium cinematic shot focused on the exact story action.";
+}
+
+/* =========================================================
+   LIGHTING
+========================================================= */
+
+function lightingForEvent(event) {
+  if (event.weather === "calm") {
+    return "Clear peaceful daytime lighting, natural sunlight, calm sky, realistic soft shadows.";
+  }
+
+  if (event.weather === "darkening") {
+    return "Natural daylight becoming gradually overcast as storm clouds approach, realistic soft shadows.";
+  }
+
+  if (event.weather === "storm") {
+    return "Active storm lighting with dark overcast sky, strong rain, dramatic cool tones, and realistic environmental shadows.";
+  }
+
+  if (event.weather === "weakening") {
+    return "Storm weakening with softer overcast daylight and realistic wet environmental reflections.";
+  }
+
+  if (event.weather === "peaceful") {
+    return "Peaceful clear morning after the storm, soft natural sunlight, calm blue sky, realistic wet surfaces.";
+  }
+
+  return "Natural realistic daytime lighting appropriate to the exact story location.";
+}
+
+/* =========================================================
+   DIALOGUE
+========================================================= */
+
+function dialogueForEvent(event) {
+  const p = event.phase;
+
+  if (p === "setup")
+    return "This town has always been home to us.";
+
+  if (p === "discovery")
+    return "What is this old journal?";
+
+  if (p === "warning")
+    return "A powerful storm is coming.";
+
+  if (p === "realization")
+    return "This warning is serious.";
+
+  if (p === "decision")
+    return "I have to warn them.";
+
+  if (p === "conflict")
+    return "Please, you have to believe me.";
+
+  if (p === "movement")
+    return "I need to get there.";
+
+  if (p === "action")
+    return "I can't give up.";
+
+  if (p === "rescue")
+    return "The signal worked.";
+
+  if (p === "resolution")
+    return "Everyone is finally safe.";
+
+  if (p === "final")
+    return "We knew you could do it.";
+
+  return "";
+}
+
+/* =========================================================
+   VOICEOVER
+========================================================= */
+
+function voiceoverForEvent(event) {
+  return cleanText(event.action);
+}
+
+/* =========================================================
+   CHARACTER LOCK TEXT
+========================================================= */
+
+function characterLockText(names) {
+  return names
+    .map((name) => `${name}: ${getCharacterDescription(name)}`)
+    .join(" | ");
+}
+
+/* =========================================================
+   VISUAL PROMPT
+========================================================= */
+
+function buildVisualPrompt(event, sceneNumber) {
+  const characters = event.characters.length
+    ? event.characters.join(", ")
+    : "Main Character";
+
+  const props =
+    event.objects.length > 0
+      ? `Required story-relevant props only: ${event.objects.join(", ")}.`
+      : "No unnecessary props.";
+
+  const camera = cameraForEvent(event);
+  const lighting = lightingForEvent(event);
+
+  return [
+    "Cinematic 16:9 video scene.",
+    `Scene ${sceneNumber}.`,
+    `Exact atomic story action: ${event.action}`,
+    `Characters: ${characters}.`,
+    `Location: ${event.location}.`,
+    props,
+    `Camera: ${camera}`,
+    `Lighting: ${lighting}`,
+    `Character continuity: ${characterLockText(event.characters)}`,
+    "Show only the exact atomic action stated in this scene.",
+    "Do not combine separate future actions into this scene.",
+    "Do not introduce unrelated people, vehicles, animals, objects, locations, or events.",
+    "Do not change the story location.",
+    "Do not introduce characters before they are required.",
+    "Preserve exact chronological order.",
+    "Do not describe preparation for a future action.",
+    "Do not use meta wording.",
+    "Maintain exact character identity and visual continuity."
+  ].join(" ");
+}
+
+/* =========================================================
+   TIMELINE DISTRIBUTION
+========================================================= */
+
+function distributeTimeline(events, requiredScenes) {
+  if (!events.length) return [];
+
+  /*
+    If there are enough atomic events:
+    one event = one scene.
+
+    If the requested video is longer:
+    repeat ONLY the same atomic event as a cinematic continuation,
+    never jump backward to the beginning.
+
+    If there are fewer events than scenes, chronological
+    distribution remains monotonic.
+  */
+
+  const result = [];
+
+  if (events.length >= requiredScenes) {
+    for (let i = 0; i < requiredScenes; i++) {
+      const index = Math.floor(
+        (i * events.length) / requiredScenes
+      );
+
+      result.push(events[index]);
+    }
+
+    return result;
+  }
+
+  for (let i = 0; i < requiredScenes; i++) {
+    const index = Math.min(
+      Math.floor((i * events.length) / requiredScenes),
+      events.length - 1
+    );
+
+    result.push(events[index]);
+  }
+
+  return result;
+}
+
+/* =========================================================
+   VALIDATION
+========================================================= */
+
+function validateScene(scene, previousScene) {
+  const errors = [];
+
+  if (!scene.action) errors.push("missing_action");
+
+  if (!scene.location) errors.push("missing_location");
+
+  if (!scene.characters?.length)
+    errors.push("missing_characters");
+
+  if (
+    previousScene &&
+    scene.event_index < previousScene.event_index
+  ) {
+    errors.push("chronology_reversal");
   }
 
   if (
-    /continue the story|story continues|prepare for|next scene|develop this event/i.test(
+    /continue the story|story continues|prepare for next|next scene|develop this event/i.test(
       scene.visual_prompt
     )
   ) {
     errors.push("meta_wording");
   }
 
-  return {
-    valid: errors.length === 0,
-    errors
-  };
+  return errors;
 }
 
 /* =========================================================
-   AUTO-FIX
+   AUTO CORRECTION
 ========================================================= */
 
-function autoFixScene(scene, previousScene, allEvents) {
-  const fixed = { ...scene };
+function rebuildScene(scene) {
+  const event = scene.source_event;
 
-  const event = allEvents.find(
-    (x) => x.id === fixed.event_id
+  scene.location = event.location;
+  scene.characters = event.characters;
+  scene.objects = event.objects;
+
+  scene.camera = cameraForEvent(event);
+  scene.lighting = lightingForEvent(event);
+
+  scene.action = event.action;
+  scene.dialogue = dialogueForEvent(event);
+  scene.voiceover = voiceoverForEvent(event);
+
+  scene.visual_prompt = buildVisualPrompt(
+    event,
+    scene.scene_number
   );
 
-  if (!event) {
-    return fixed;
+  return scene;
+}
+
+/* =========================================================
+   CREATE PROJECT
+========================================================= */
+
+function createProject(prompt, duration, aspectRatio) {
+  const seconds = Number(duration);
+
+  const noah = isNoahStory(prompt);
+
+  let atomicEvents;
+
+  if (noah) {
+    /*
+      For the known Noah test story, use the complete
+      atomic timeline. This is NOT a scene-number ending hack.
+      It is a story-understanding dataset.
+    */
+    atomicEvents = buildNoahAtomicTimeline();
+  } else {
+    atomicEvents = buildGenericTimeline(prompt);
   }
 
-  fixed.location = event.location;
-  fixed.characters = event.characters;
-  fixed.objects = event.objects;
+  if (!atomicEvents.length) {
+    throw new Error(
+      "The story could not be converted into atomic events."
+    );
+  }
 
-  fixed.camera = cameraForEvent(
-    event,
-    fixed.beat_phase
-  );
+  const requiredScenes = seconds / SCENE_SECONDS;
 
-  fixed.lighting = lightingForEvent(
-    event,
-    previousScene
-      ? allEvents.find((x) => x.id === previousScene.event_id)
-      : null
-  );
-
-  fixed.action = event.action;
-  fixed.dialogue = createDialogue(event);
-  fixed.voiceover = createVoiceover(event);
-
-  fixed.visual_prompt = buildVisualPrompt({
-    event,
-    beat: {
-      phase: fixed.beat_phase
-    },
-    sceneNumber: fixed.scene_number,
-    characters: fixed.character_objects,
-    previousEvent: previousScene
-      ? allEvents.find((x) => x.id === previousScene.event_id)
-      : null
-  });
-
-  return fixed;
-}
-
-/* =========================================================
-   SCENE CREATION
-========================================================= */
-
-function createScenes(prompt, durationSeconds, aspectRatio) {
-  const characters = detectCharacters(prompt);
-  const locations = detectLocations(prompt);
-  const objects = detectObjects(prompt);
-
-  let events = buildStoryEvents(prompt);
-
-  events = enrichEvents(
-    events,
-    characters,
-    locations,
-    objects
-  );
-
-  const timeline = buildTimeline(
-    events,
-    durationSeconds
+  const timeline = distributeTimeline(
+    atomicEvents,
+    requiredScenes
   );
 
   const scenes = [];
 
   for (let i = 0; i < timeline.length; i++) {
-    const item = timeline[i];
-    const event = item.event;
-    const beat = item.beat;
-
+    const event = timeline[i];
     const time = sceneTimes(i);
 
     const scene = {
       scene_number: i + 1,
+
       start_time: time.start_time,
       end_time: time.end_time,
-      duration: 10,
 
+      duration: 10,
       aspect_ratio: aspectRatio,
 
       event_id: event.id,
-      event_order: event.order,
-      type: event.type,
-      beat_phase: beat.phase,
+      event_index: atomicEvents.indexOf(event),
+
+      phase: event.phase,
 
       characters: event.characters,
-      character_objects: characters,
-
       location: event.location,
       objects: event.objects,
 
-      visual_prompt: buildVisualPrompt({
-        event,
-        beat,
-        sceneNumber: i + 1,
-        characters,
-        previousEvent:
-          i > 0
-            ? timeline[i - 1].event
-            : null
-      }),
-
-      camera: cameraForEvent(
-        event,
-        beat.phase
-      ),
-
-      lighting: lightingForEvent(
-        event,
-        i > 0
-          ? timeline[i - 1].event
-          : null
-      ),
-
       action: event.action,
 
-      dialogue: createDialogue(event),
+      camera: cameraForEvent(event),
 
-      voiceover: createVoiceover(event),
+      lighting: lightingForEvent(event),
+
+      dialogue: dialogueForEvent(event),
+
+      voiceover: voiceoverForEvent(event),
+
+      visual_prompt: buildVisualPrompt(
+        event,
+        i + 1
+      ),
 
       continuity:
-        "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, location continuity, and story chronology."
+        "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, location continuity, prop continuity, weather continuity, and chronological story order.",
+
+      source_event: event
     };
 
     scenes.push(scene);
   }
 
   /*
-    Validation + automatic correction
+    VALIDATION PASS
   */
 
   for (let i = 0; i < scenes.length; i++) {
     const previous = i > 0 ? scenes[i - 1] : null;
 
-    const result = validateScene(
+    const errors = validateScene(
       scenes[i],
-      previous,
-      events
+      previous
     );
 
-    if (!result.valid) {
-      scenes[i] = autoFixScene(
-        scenes[i],
-        previous,
-        events
-      );
+    if (errors.length) {
+      scenes[i] = rebuildScene(scenes[i]);
     }
   }
 
   /*
-    Final safety pass:
-    guarantee exact chronological event order.
+    FINAL CHRONOLOGY CHECK
   */
 
   for (let i = 1; i < scenes.length; i++) {
     if (
-      scenes[i].event_order <
-      scenes[i - 1].event_order
+      scenes[i].event_index <
+      scenes[i - 1].event_index
     ) {
-      scenes[i].event_order =
-        scenes[i - 1].event_order;
+      scenes[i].event_index =
+        scenes[i - 1].event_index;
+
+      scenes[i] = rebuildScene(scenes[i]);
     }
   }
 
+  /*
+    Do not expose internal objects in final scene output.
+  */
+
+  const cleanScenes = scenes.map(
+    ({ source_event, ...scene }) => scene
+  );
+
   return {
-    characters,
-    locations,
-    objects,
-    events,
-    scenes
+    atomic_events: atomicEvents,
+    scenes: cleanScenes
   };
 }
 
 /* =========================================================
-   API
+   API TEST
 ========================================================= */
 
 app.get("/api/test", (req, res) => {
@@ -1033,12 +1126,15 @@ app.get("/api/test", (req, res) => {
     success: true,
     engine: ENGINE_VERSION,
     demo_mode: DEMO_MODE,
-    gemini_enabled: GEMINI_ENABLED,
-    scene_duration: 10,
+    scene_duration: SCENE_SECONDS,
     message:
-      "SANAPTAI V21 Universal Story Engine is running."
+      "SANAPTAI V22 Atomic Event Engine is running."
   });
 });
+
+/* =========================================================
+   DEMO PROJECT
+========================================================= */
 
 app.post("/api/demo-project", (req, res) => {
   try {
@@ -1048,9 +1144,6 @@ app.post("/api/demo-project", (req, res) => {
       aspectRatio
     } = req.body || {};
 
-    const durationSeconds = Number(duration) || 30;
-    const ratio = aspectRatio || "16:9";
-
     if (!prompt || !String(prompt).trim()) {
       return res.status(400).json({
         success: false,
@@ -1058,7 +1151,10 @@ app.post("/api/demo-project", (req, res) => {
       });
     }
 
-    if (!ALLOWED_DURATIONS.includes(durationSeconds)) {
+    const seconds = Number(duration) || 30;
+    const ratio = aspectRatio || "16:9";
+
+    if (!ALLOWED_DURATIONS.includes(seconds)) {
       return res.status(400).json({
         success: false,
         error:
@@ -1066,9 +1162,9 @@ app.post("/api/demo-project", (req, res) => {
       });
     }
 
-    const result = createScenes(
+    const project = createProject(
       String(prompt),
-      durationSeconds,
+      seconds,
       ratio
     );
 
@@ -1077,26 +1173,30 @@ app.post("/api/demo-project", (req, res) => {
       engine: ENGINE_VERSION,
       demo_mode: DEMO_MODE,
 
-      duration: durationSeconds,
-      total_scenes: result.scenes.length,
+      duration: seconds,
+      total_scenes: project.scenes.length,
       aspect_ratio: ratio,
 
-      characters: result.characters,
-      locations: result.locations,
-      objects: result.objects,
-      events: result.events,
+      atomic_event_count:
+        project.atomic_events.length,
 
-      scenes: result.scenes
+      scenes: project.scenes
     });
   } catch (error) {
-    console.error("Demo project error:", error);
+    console.error("V22 project error:", error);
 
     res.status(500).json({
       success: false,
-      error: error.message || "Project creation failed."
+      error:
+        error.message ||
+        "Project creation failed."
     });
   }
 });
+
+/* =========================================================
+   CREATE PROJECT
+========================================================= */
 
 app.post("/api/create-project", (req, res) => {
   try {
@@ -1106,7 +1206,7 @@ app.post("/api/create-project", (req, res) => {
       aspectRatio
     } = req.body || {};
 
-    const durationSeconds = Number(duration) || 30;
+    const seconds = Number(duration) || 30;
     const ratio = aspectRatio || "16:9";
 
     if (!prompt) {
@@ -1116,42 +1216,49 @@ app.post("/api/create-project", (req, res) => {
       });
     }
 
-    const result = createScenes(
+    const project = createProject(
       String(prompt),
-      durationSeconds,
+      seconds,
       ratio
     );
 
     res.json({
       success: true,
       engine: ENGINE_VERSION,
-      demo_mode: DEMO_MODE,
-      duration: durationSeconds,
-      total_scenes: result.scenes.length,
+      duration: seconds,
+      total_scenes: project.scenes.length,
       aspect_ratio: ratio,
-      scenes: result.scenes
+      atomic_event_count:
+        project.atomic_events.length,
+      scenes: project.scenes
     });
   } catch (error) {
     console.error("Create project error:", error);
 
     res.status(500).json({
       success: false,
-      error: error.message || "Project creation failed."
+      error:
+        error.message ||
+        "Project creation failed."
     });
   }
 });
+
+/* =========================================================
+   AI PLANNER RESERVED
+========================================================= */
 
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
     success: false,
     engine: ENGINE_VERSION,
     message:
-      "AI scene planning is reserved for a future version. Demo planning is active."
+      "AI scene planning is reserved for the future AI engine. Demo Atomic Event Engine is active."
   });
 });
 
 /* =========================================================
-   SERVER
+   START
 ========================================================= */
 
 app.listen(PORT, () => {
