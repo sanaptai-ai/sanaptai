@@ -317,22 +317,24 @@ function distributeGroups(groups, sceneCount) {
 }
 
 function beatTimes(count) {
-  if (count === 3) {
+  if (count <= 1) {
     return [
-      [0, 3],
-      [3, 7],
-      [7, 10]
+      { start: 0, end: 10 }
     ];
   }
 
   if (count === 2) {
     return [
-      [0, 5],
-      [5, 10]
+      { start: 0, end: 5 },
+      { start: 5, end: 10 }
     ];
   }
 
-  return [[0, 10]];
+  return [
+    { start: 0, end: 3 },
+    { start: 3, end: 7 },
+    { start: 7, end: 10 }
+  ];
 }
 
 /*
