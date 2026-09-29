@@ -13,8 +13,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 10000;
-const ENGINE_VERSION = "V41.0";
-
+const ENGINE_VERSION = "FINAL-1.0";
 
 // ============================================================
 // TEXT
@@ -28,9 +27,17 @@ function clean(s = "") {
 }
 
 function sentences(text) {
-  return (text.match(/[^.!?]+[.!?]+/g) || [text])
-    .map(clean)
-    .filter(x => x.length > 5);
+  const matches = String(text).match(/[^.!?]+[.!?]+/g) || [];
+  const result = matches.map(clean).filter(x => x.length > 5);
+
+  const consumed = result.join(" ");
+  const remainder = clean(String(text).slice(consumed.length));
+
+  if (remainder.length > 5) {
+    result.push(remainder);
+  }
+
+  return result.length ? result : [clean(text)];
 }
 
 function lower(s = "") {
@@ -41,9 +48,8 @@ function unique(arr) {
   return [...new Set(arr.filter(Boolean))];
 }
 
-
 // ============================================================
-// STORY ENTITIES
+// CHARACTER INTELLIGENCE
 // ============================================================
 
 const relationshipMap = {
@@ -62,128 +68,145 @@ const relationshipMap = {
   husband: "Husband"
 };
 
-const cities = [
+const bannedNames = new Set([
   "Boston",
   "Chicago",
-  "New York",
-  "Los Angeles",
-  "Seattle",
-  "Miami",
-  "Denver",
-  "Houston",
-  "Dallas",
-  "San Francisco"
-];
+  "New",
+  "York",
+  "Los",
+  "Angeles",
+  "San",
+  "Francisco",
+  "Saturday",
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Curious",
+  "Inside",
+  "When",
+  "One",
+  "The",
+  "After",
+  "Before"
+]);
 
 function analyzeCharacters(story) {
   const result = [];
-  const text = story;
 
-  // "named Alex"
-  for (const m of text.matchAll(/\bnamed\s+([A-Z][a-z]+)\b/g)) {
-    result.push(m[1]);
+  for (const m of story.matchAll(/\bnamed\s+([A-Z][a-z]+)\b/g)) {
+    if (!bannedNames.has(m[1])) {
+      result.push(m[1]);
+    }
   }
 
-  // "a 22-year-old ... named Alex" / "Alex is..."
-  for (const m of text.matchAll(
+  for (const m of story.matchAll(
     /\b([A-Z][a-z]{2,})\b(?=\s+(?:is|lives|works|finds|receives|discovers|travels|takes|opens|notices))/g
   )) {
-    result.push(m[1]);
-  }
-
-  // Relationships only become characters if story actually
-  // describes their presence/action, not merely possession.
-  const t = lower(story);
-
-  for (const [word, display] of Object.entries(relationshipMap)) {
-    const regex = new RegExp(
-      `\\b(?:${word})\\b`,
-      "i"
-    );
-
-    if (regex.test(t)) {
-      result.push(display);
+    if (!bannedNames.has(m[1])) {
+      result.push(m[1]);
     }
   }
 
-  const chars = unique(result);
+  // Only add relationships if they are actually present as story
+  // entities. They will NOT automatically become active characters.
+  for (const word of Object.keys(relationshipMap)) {
+    const regex = new RegExp(`\\b${word}\\b`, "i");
 
-  // Remove location/time/common words accidentally captured.
-  const banned = new Set([
-    "Boston",
-    "Chicago",
-    "Saturday",
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Curious",
-    "Inside",
-    "When",
-    "One",
-    "The",
-    "After",
-    "Before"
-  ]);
-
-  return chars.filter(x => !banned.has(x));
-}
-
-
-// ============================================================
-// ACTIVE CHARACTER DETECTION
-// ============================================================
-
-function activeCharacters(text, entities) {
-  const t = lower(text);
-  const result = [];
-
-  for (const character of entities) {
-    const c = lower(character);
-
-    if (t.includes(c)) {
-      result.push(character);
-      continue;
-    }
-
-    // Relationship must be doing something in this beat.
-    if (
-      character === "Mother" &&
-      /\b(mother|mom)\b/i.test(text)
-    ) {
-      result.push(character);
-    }
-
-    if (
-      character === "Father" &&
-      /\b(father|dad)\b/i.test(text)
-    ) {
-      result.push(character);
-    }
-
-    // Grandfather is normally BACKSTORY unless physically present.
-    // Words such as "late grandfather", "grandpa's", "grandfather's"
-    // do NOT put him on screen.
-    if (
-      character === "Grandfather" &&
-      /\b(grandfather|grandpa)\b/i.test(text) &&
-      !/\b(lives|walks|stands|sits|speaks|waits|enters|appears|meets|sees)\b/i.test(text)
-    ) {
-      // backstory only
+    if (regex.test(story)) {
+      result.push(relationshipMap[word]);
     }
   }
 
   return unique(result);
 }
 
+// ============================================================
+// PROTAGONIST
+// ============================================================
+
+function findProtagonist(characters) {
+  return (
+    characters.find(c =>
+      ![
+        "Mother",
+        "Father",
+        "Grandfather",
+        "Grandmother",
+        "Brother",
+        "Sister",
+        "Friend",
+        "Wife",
+        "Husband"
+      ].includes(c)
+    ) || characters[0] || "Character"
+  );
+}
 
 // ============================================================
-// LOCATION MODEL
+// ACTIVE CHARACTER INTELLIGENCE
+// ============================================================
+
+function activeCharacters(text, entities, protagonist) {
+  const t = lower(text);
+  const result = [];
+
+  // Named protagonist is active whenever explicitly mentioned.
+  if (
+    protagonist &&
+    new RegExp(`\\b${protagonist}\\b`, "i").test(text)
+  ) {
+    result.push(protagonist);
+  }
+
+  // Pronouns in an action beat refer to the protagonist unless
+  // another physical character is explicitly introduced.
+  if (
+    protagonist &&
+    /\b(he|she|his|her|him|they|their)\b/i.test(text) &&
+    /\b(finds|finds|discovers|takes|opens|uses|travels|goes|arrives|enters|notices|receives|sees|reads|examines|realizes|waits)\b/i.test(text)
+  ) {
+    result.push(protagonist);
+  }
+
+  // Mother/Father only become physically present when they are
+  // explicitly performing or receiving an action.
+  if (
+    /\b(mother|mom)\b/i.test(text) &&
+    /\b(says|asks|warns|tells|looks|stands|sits|speaks|shows|hands|gives|becomes)\b/i.test(text)
+  ) {
+    result.push("Mother");
+  }
+
+  if (
+    /\b(father|dad)\b/i.test(text) &&
+    /\b(says|asks|warns|tells|looks|stands|sits|speaks|shows|hands|gives)\b/i.test(text)
+  ) {
+    result.push("Father");
+  }
+
+  // Grandfather is BACKSTORY by default.
+  // Only show him if he is physically acting in the present story.
+  if (
+    /\b(grandfather|grandpa)\b/i.test(text) &&
+    /\b(stands|sits|walks|enters|leaves|speaks|talks|meets|holds|hands|waits)\b/i.test(text) &&
+    !/\b(late grandfather|late grandpa|his grandfather|his grandpa|her grandfather|her grandpa|grandfather's|grandpa's|once waited)\b/i.test(text)
+  ) {
+    result.push("Grandfather");
+  }
+
+  return unique(result);
+}
+
+// ============================================================
+// LOCATION INTELLIGENCE
 // ============================================================
 
 const locationRules = [
+  ["abandoned train station", "abandoned train station"],
+  ["train station", "train station"],
   ["apartment", "apartment"],
   ["home", "home"],
   ["house", "house"],
@@ -193,8 +216,6 @@ const locationRules = [
   ["workshop", "workshop"],
   ["basement", "basement"],
   ["attic", "attic"],
-  ["abandoned train station", "abandoned train station"],
-  ["train station", "train station"],
   ["movie theater", "movie theater"],
   ["theater", "movie theater"],
   ["lighthouse", "lighthouse"],
@@ -212,163 +233,326 @@ const locationRules = [
   ["beach", "beach"]
 ];
 
-function explicitLocation(text) {
+function mentionedLocation(text) {
   const t = lower(text);
 
   for (const [pattern, location] of locationRules) {
-    if (t.includes(pattern)) return location;
+    if (t.includes(pattern)) {
+      return location;
+    }
   }
 
   return null;
 }
 
-function cityFromStory(story) {
-  for (const city of cities) {
-    if (story.includes(city)) return city;
-  }
-  return null;
+// A location mentioned as part of a photograph, letter, journal,
+// memory, description, etc. is NOT the current location.
+function isReferencedLocation(text, location) {
+  const t = lower(text);
+
+  if (!location) return false;
+
+  const referencePatterns = [
+    `photograph shows ${location}`,
+    `photo shows ${location}`,
+    `picture shows ${location}`,
+    `image shows ${location}`,
+    `photograph of ${location}`,
+    `photo of ${location}`,
+    `picture of ${location}`,
+    `journal mentions ${location}`,
+    `journal described ${location}`,
+    `journal about ${location}`,
+    `letter mentions ${location}`,
+    `story about ${location}`
+  ];
+
+  return referencePatterns.some(p => t.includes(p));
 }
 
+function isMovementToLocation(text, location) {
+  const t = lower(text);
+
+  if (!location) return false;
+
+  return (
+    new RegExp(
+      `\\b(travels|goes|go|returns|arrives|enters|walks|runs|drives|heads|reaches)\\b[^.]*\\b${location}\\b`,
+      "i"
+    ).test(text) ||
+    new RegExp(
+      `\\b(inside|at|into|within)\\b[^.]*\\b${location}\\b`,
+      "i"
+    ).test(text)
+  );
+}
+
+function resolveLocations(beats, story) {
+  let current = "apartment";
+
+  return beats.map(beat => {
+    const mentioned = mentionedLocation(beat.text);
+
+    // Location appearing only inside a photograph/journal/letter
+    // does NOT change current scene location.
+    if (
+      mentioned &&
+      !isReferencedLocation(beat.text, mentioned)
+    ) {
+      if (
+        isMovementToLocation(beat.text, mentioned) ||
+        /\b(inside|at|in)\b/i.test(beat.text) &&
+        !/\b(photograph|photo|picture|journal|letter)\b/i.test(beat.text)
+      ) {
+        current = mentioned;
+      }
+    }
+
+    // Explicit "home" after returning home.
+    if (
+      /\b(takes .* home|brings .* home|returns home|goes home|at home)\b/i.test(beat.text)
+    ) {
+      current = "home";
+    }
+
+    return {
+      ...beat,
+      location: current
+    };
+  });
+}
 
 // ============================================================
-// OBJECT NORMALIZATION
+// OBJECT INTELLIGENCE
 // ============================================================
-
-const objectRules = [
-  ["old film camera", "film camera"],
-  ["film camera", "film camera"],
-  ["camera", "film camera"],
-
-  ["photographs", "photographs"],
-  ["photograph", "photograph"],
-
-  ["old journal", "journal"],
-  ["journal", "journal"],
-
-  ["mysterious red clock", "red clock"],
-  ["red clock", "red clock"],
-  ["clock", "clock"],
-
-  ["locked glass case", "glass case"],
-  ["glass case", "glass case"],
-
-  ["small key", "key"],
-  ["key", "key"],
-
-  ["old wooden locker", "wooden locker"],
-  ["locker", "wooden locker"],
-
-  ["old letter", "letter"],
-  ["letter", "letter"],
-
-  ["family photographs", "family photographs"],
-  ["family documents", "family documents"],
-  ["documents", "documents"],
-
-  ["metal box", "metal box"],
-  ["box", "box"]
-];
 
 function objectsFor(text) {
   const t = lower(text);
   const found = [];
 
-  for (const [pattern, object] of objectRules) {
-    if (t.includes(pattern)) found.push(object);
+  if (/\b(film camera|old camera|camera)\b/.test(t)) {
+    found.push("film camera");
+  }
+
+  if (/\b(family photographs|collection of family photographs)\b/.test(t)) {
+    found.push("family photographs");
+  } else if (/\bphotographs?\b/.test(t)) {
+    found.push("photographs");
+  }
+
+  if (/\bold journal\b|\bjournal\b/.test(t)) {
+    found.push("journal");
+  }
+
+  if (/\bmysterious red clock\b|\bred clock\b/.test(t)) {
+    found.push("red clock");
+  }
+
+  if (
+    /\bglass case\b/.test(t) ||
+    /\blocked glass case\b/.test(t)
+  ) {
+    found.push("glass case");
+  }
+
+  if (/\bsmall key\b|\bkey\b/.test(t)) {
+    found.push("key");
+  }
+
+  if (/\bold wooden locker\b|\bwooden locker\b|\blocker\b/.test(t)) {
+    found.push("wooden locker");
+  }
+
+  if (/\bold letter\b|\bletter\b/.test(t)) {
+    found.push("letter");
+  }
+
+  if (/\bfamily documents?\b|\bdocuments?\b/.test(t)) {
+    found.push("family documents");
+  }
+
+  if (/\bmetal box\b|\bbox\b/.test(t)) {
+    found.push("metal box");
   }
 
   return unique(found);
 }
 
-
 // ============================================================
-// STORY BEAT ENGINE
+// STORY BEATS
 // ============================================================
 
 function classify(text) {
   const t = lower(text);
 
-  if (/lives|is a|works as|works at/.test(t))
+  if (/lives|is a|works as|works at/.test(t)) {
     return "setup";
+  }
 
-  if (/receives|finds|discovers|comes across/.test(t))
+  if (/receives|finds|discovers|comes across/.test(t)) {
     return "discovery";
+  }
 
-  if (/develops|reads|examines|notices|sees|looks at/.test(t))
+  if (/develops|reads|examines|notices|sees|looks at/.test(t)) {
     return "investigation";
+  }
 
-  if (/warns|warning|nervous|tells .* never|tells .* not to/.test(t))
+  if (/warns|warning|nervous|tells .* never|tells .* not to/.test(t)) {
     return "warning";
+  }
 
-  if (/travels|goes to|returns to|arrives|enters/.test(t))
+  if (/travels|goes to|returns to|arrives|enters|heads to|reaches/.test(t)) {
     return "journey";
+  }
 
-  if (/opens|uses|takes|finds.*inside|hidden|unlocks/.test(t))
+  if (/opens|uses|takes|finds.*inside|hidden|unlocks/.test(t)) {
     return "action";
+  }
 
-  if (/reveals|explains|realizes|understands|learns/.test(t))
+  if (/reveals|explains|realizes|understands|learns/.test(t)) {
     return "revelation";
+  }
 
-  if (/preserve|protect|save|safely|decide/.test(t))
+  if (/preserve|protect|save|safely|decide/.test(t)) {
     return "resolution";
+  }
 
   return "narrative";
 }
 
+// ============================================================
+// ATOMIC BEAT SPLITTER
+// ============================================================
 
-// Split sentences into actual causal beats.
-// Example:
-// "Alex discovers a key and uses it to open a locker."
-// becomes:
-// 1. discovers key
-// 2. uses key to open locker
 function splitIntoBeats(sentence) {
   const s = clean(sentence);
   const result = [];
 
   let match;
 
-  // X discovers/finds A and uses A to B
+  // Example:
+  // Alex discovers a key hidden inside the clock and uses it
+  // to open an old wooden locker.
   match = s.match(
-    /^(.*?\b(?:discovers|finds|notices)\b.*?)(?:\s+and\s+)(uses\s+.+)$/i
+    /^(.+?\b(?:discovers|finds|notices)\b.+?)\s+and\s+(uses\s+.+)$/i
   );
 
   if (match) {
-    result.push(clean(match[1]));
-    result.push(clean(match[2]));
+    const first = clean(match[1]);
+    const secondAction = clean(match[2]);
+
+    const subjectMatch = first.match(
+      /^([A-Z][a-z]+)\b/i
+    );
+
+    const subject =
+      subjectMatch
+        ? subjectMatch[1]
+        : null;
+
+    result.push(first);
+
+    if (subject) {
+      result.push(
+        clean(`${subject} ${secondAction}`)
+      );
+    } else {
+      result.push(secondAction);
+    }
+
     return result;
   }
 
-  // "Inside ..., he finds ... and discovers ..."
+  // Finds X and opens/discovers Y.
+  match = s.match(
+    /^(.+?\bfinds\b.+?)\s+and\s+(opens|discovers|uses|takes|unlocks)\s+(.+)$/i
+  );
+
+  if (match) {
+    const first = clean(match[1]);
+    const action = clean(`${match[2]} ${match[3]}`);
+
+    const subjectMatch = first.match(
+      /^([A-Z][a-z]+)\b/i
+    );
+
+    const subject =
+      subjectMatch
+        ? subjectMatch[1]
+        : null;
+
+    result.push(first);
+    result.push(
+      subject
+        ? clean(`${subject} ${action}`)
+        : action
+    );
+
+    return result;
+  }
+
+  // "Inside the locker, he finds X and discovers Y."
   match = s.match(
     /^(.*?\bfinds\b.*?)(?:\s+and\s+)(discovers\s+.*)$/i
   );
 
   if (match) {
-    result.push(clean(match[1]));
-    result.push(clean(match[2]));
+    const first = clean(match[1]);
+    const second = clean(match[2]);
+
+    const pronoun =
+      first.match(/\b(he|she|they)\b/i);
+
+    if (pronoun) {
+      result.push(first);
+      result.push(
+        clean(`${pronoun[1]} ${second}`)
+      );
+    } else {
+      result.push(first, second);
+    }
+
     return result;
   }
 
-  // "shows ... but ..."
+  // Shows X, but Y.
   match = s.match(
     /^(.*?\bshows\b.*?)(?:,\s*but\s+)(.*)$/i
   );
 
   if (match) {
-    result.push(clean(match[1]));
-    result.push(clean(match[2]));
+    result.push(
+      clean(match[1]),
+      clean(match[2])
+    );
     return result;
   }
 
-  // "takes ... and realizes ..."
+  // Takes X and realizes Y.
   match = s.match(
-    /^(.*?\btakes\b.*?)(?:\s+and\s+)(realizes\s+.*)$/i
+    /^(.+?\btakes\b.+?)\s+and\s+(realizes\s+.+)$/i
   );
 
   if (match) {
-    result.push(clean(match[1]));
-    result.push(clean(match[2]));
+    const first = clean(match[1]);
+    const second = clean(match[2]);
+
+    const subjectMatch =
+      first.match(/^([A-Z][a-z]+)\b/i);
+
+    const subject =
+      subjectMatch
+        ? subjectMatch[1]
+        : null;
+
+    result.push(first);
+
+    result.push(
+      subject
+        ? clean(`${subject} ${second}`)
+        : second
+    );
+
     return result;
   }
 
@@ -379,7 +563,9 @@ function buildStoryBeats(story) {
   const beats = [];
 
   for (const sentence of sentences(story)) {
-    for (const piece of splitIntoBeats(sentence)) {
+    const pieces = splitIntoBeats(sentence);
+
+    for (const piece of pieces) {
       const text = clean(piece);
 
       if (!text) continue;
@@ -396,58 +582,9 @@ function buildStoryBeats(story) {
   return beats;
 }
 
-
-// ============================================================
-// IMPORTANT: CURRENT LOCATION ≠ MENTIONED LOCATION
-// ============================================================
-
-function resolveLocations(beats, story) {
-  let current = null;
-  const city = cityFromStory(story);
-
-  return beats.map((beat, index) => {
-    const explicit = explicitLocation(beat.text);
-
-    if (explicit) {
-      current = explicit;
-    } else if (!current) {
-      current = "home";
-    }
-
-    return {
-      ...beat,
-      location: current,
-      city
-    };
-  });
-}
-
-
 // ============================================================
 // SCENE ALLOCATION
 // ============================================================
-
-function scoreBeat(beat) {
-  const t = lower(beat.text);
-
-  let score = 1;
-
-  if (beat.type === "discovery") score += 3;
-  if (beat.type === "warning") score += 3;
-  if (beat.type === "revelation") score += 4;
-  if (beat.type === "resolution") score += 4;
-  if (beat.objects.length) score += 1;
-
-  if (
-    t.includes("and") ||
-    t.includes("inside") ||
-    t.includes("then")
-  ) {
-    score += 1;
-  }
-
-  return score;
-}
 
 function allocateScenes(beats, count) {
   const scenes = Array.from(
@@ -456,26 +593,29 @@ function allocateScenes(beats, count) {
   );
 
   if (beats.length <= count) {
-    beats.forEach((b, i) => scenes[i].push(b));
+    beats.forEach((beat, index) => {
+      scenes[index].push(beat);
+    });
+
     return scenes;
   }
 
-  // Preserve chronological order.
-  // Never reorder beats by importance.
   let cursor = 0;
 
   for (let i = 0; i < count; i++) {
     const remaining = beats.length - cursor;
     const scenesLeft = count - i;
 
-    let take = Math.ceil(remaining / scenesLeft);
+    // Keep chronological sequence.
+    const take = Math.ceil(
+      remaining / scenesLeft
+    );
 
-    // Resolution should remain in final scene.
-    if (i === count - 1) {
-      take = remaining;
-    }
-
-    for (let j = 0; j < take && cursor < beats.length; j++) {
+    for (
+      let j = 0;
+      j < take && cursor < beats.length;
+      j++
+    ) {
       scenes[i].push(beats[cursor++]);
     }
   }
@@ -483,32 +623,25 @@ function allocateScenes(beats, count) {
   return scenes;
 }
 
-
 // ============================================================
-// DIALOGUE — HISTORY AWARE
+// DIALOGUE
 // ============================================================
 
-function dialogueFor(sceneBeats, active, usedDialogue) {
+function dialogueFor(
+  sceneBeats,
+  active,
+  usedDialogue,
+  protagonist
+) {
   const text = lower(
-    sceneBeats.map(x => x.text).join(" ")
+    sceneBeats.map(b => b.text).join(" ")
   );
 
-  const protagonist =
-    active.find(x =>
-      ![
-        "Mother",
-        "Father",
-        "Grandfather",
-        "Grandmother"
-      ].includes(x)
-    ) || active[0] || "Character";
-
-  const mother = active.includes("Mother");
   const candidate = [];
 
   if (
     /warn|warning|never visit|stay away|do not go/.test(text) &&
-    mother
+    active.includes("Mother")
   ) {
     candidate.push({
       speaker: "Mother",
@@ -517,7 +650,6 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
     /film camera|camera/.test(text)
   ) {
     candidate.push({
@@ -527,8 +659,8 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
-    /photograph|photographs/.test(text)
+    /photograph|photographs/.test(text) &&
+    !/red clock/.test(text)
   ) {
     candidate.push({
       speaker: protagonist,
@@ -537,7 +669,6 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
     /journal/.test(text)
   ) {
     candidate.push({
@@ -547,8 +678,7 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
-    /red clock|clock/.test(text)
+    /red clock/.test(text)
   ) {
     candidate.push({
       speaker: protagonist,
@@ -557,17 +687,15 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
     /key/.test(text)
   ) {
     candidate.push({
       speaker: protagonist,
-      text: "There is a key hidden inside."
+      text: "There's a key hidden inside."
     });
   }
 
   if (
-    !candidate.length &&
     /locker/.test(text)
   ) {
     candidate.push({
@@ -577,7 +705,6 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
     /letter/.test(text)
   ) {
     candidate.push({
@@ -587,17 +714,15 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
   }
 
   if (
-    !candidate.length &&
-    /reveal|reveals|realizes|understands|family/.test(text)
+    /reveals|realizes|understands|family history/.test(text)
   ) {
     candidate.push({
       speaker: protagonist,
-      text: "Now I understand what Grandpa left behind."
+      text: "Now I understand our family's past."
     });
   }
 
   if (
-    !candidate.length &&
     /preserve|safely|protect/.test(text)
   ) {
     candidate.push({
@@ -606,7 +731,6 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
     });
   }
 
-  // NEVER repeat dialogue.
   for (const d of candidate) {
     if (!usedDialogue.has(d.text)) {
       usedDialogue.add(d.text);
@@ -616,7 +740,6 @@ function dialogueFor(sceneBeats, active, usedDialogue) {
 
   return [];
 }
-
 
 // ============================================================
 // VOICEOVER
@@ -628,25 +751,21 @@ function voiceoverFor(beats) {
   for (const beat of beats) {
     const text = clean(beat.text);
 
-    if (
-      text.endsWith(".") ||
-      text.endsWith("!") ||
-      text.endsWith("?")
-    ) {
+    if (/[.!?]$/.test(text)) {
       complete.push(text);
     }
   }
 
-  // Never cut a sentence in the middle.
   let output = "";
 
   for (const sentence of complete) {
-    const candidate =
-      output
-        ? `${output} ${sentence}`
-        : sentence;
+    const candidate = output
+      ? `${output} ${sentence}`
+      : sentence;
 
-    if (candidate.length > 230) break;
+    if (candidate.length > 240) {
+      break;
+    }
 
     output = candidate;
   }
@@ -654,9 +773,8 @@ function voiceoverFor(beats) {
   return output;
 }
 
-
 // ============================================================
-// CAMERA / LIGHTING
+// CAMERA / LIGHT
 // ============================================================
 
 function cameraFor(type, objects) {
@@ -706,23 +824,41 @@ function lightingFor(type) {
   return "Natural cinematic lighting appropriate to the time and location.";
 }
 
-
 // ============================================================
-// SCENE
+// SCENE CREATION
 // ============================================================
 
-function createScene(index, beats, allCharacters, usedDialogue) {
-  const first = beats[0];
-
+function createScene(
+  index,
+  beats,
+  allCharacters,
+  protagonist,
+  usedDialogue
+) {
   const action = beats
     .map(b => b.text)
     .join(" ");
 
   const active = unique(
     beats.flatMap(b =>
-      activeCharacters(b.text, allCharacters)
+      activeCharacters(
+        b.text,
+        allCharacters,
+        protagonist
+      )
     )
   );
+
+  // If pronoun/action beats exist but explicit name isn't present,
+  // protagonist must still be the visible character.
+  if (
+    active.length === 0 &&
+    beats.some(b =>
+      /\b(he|she|his|her|him|they|their)\b/i.test(b.text)
+    )
+  ) {
+    active.push(protagonist);
+  }
 
   const objects = unique(
     beats.flatMap(b => b.objects)
@@ -731,22 +867,23 @@ function createScene(index, beats, allCharacters, usedDialogue) {
   const dialogue = dialogueFor(
     beats,
     active,
-    usedDialogue
+    usedDialogue,
+    protagonist
   );
 
   const voiceover =
     voiceoverFor(beats);
 
   const location =
-    first.location || "story location";
+    beats[0]?.location || "home";
 
   const type =
-    first.type || "narrative";
+    beats[0]?.type || "narrative";
 
   const charactersText =
     active.length
       ? active.join(", ")
-      : "story protagonist";
+      : protagonist;
 
   const objectText =
     objects.length
@@ -791,7 +928,6 @@ function createScene(index, beats, allCharacters, usedDialogue) {
   };
 }
 
-
 // ============================================================
 // VALIDATION
 // ============================================================
@@ -805,48 +941,64 @@ function validate(scenes) {
       scene.start_time !== i * 10 ||
       scene.end_time !== (i + 1) * 10
     ) {
-      errors.push(`Timing error in scene ${i + 1}`);
+      errors.push(
+        `Timing error in scene ${i + 1}`
+      );
     }
 
     if (!scene.action) {
-      errors.push(`Empty action in scene ${i + 1}`);
+      errors.push(
+        `Empty action in scene ${i + 1}`
+      );
     }
 
     if (
       scene.voiceover &&
       !/[.!?]$/.test(scene.voiceover.trim())
     ) {
-      errors.push(`Incomplete voiceover in scene ${i + 1}`);
+      errors.push(
+        `Incomplete voiceover in scene ${i + 1}`
+      );
     }
 
     for (const d of scene.dialogue || []) {
       if (dialogueSeen.has(d.text)) {
-        errors.push(`Repeated dialogue in scene ${i + 1}`);
+        errors.push(
+          `Repeated dialogue in scene ${i + 1}`
+        );
       }
 
       dialogueSeen.add(d.text);
+
+      if (d.text.length > 150) {
+        errors.push(
+          `Dialogue too long in scene ${i + 1}`
+        );
+      }
     }
   });
 
   return errors;
 }
 
-
 // ============================================================
 // PROJECT
 // ============================================================
 
-function generateProject(prompt, duration, aspectRatio) {
+function generateProject(
+  prompt,
+  duration,
+  aspectRatio
+) {
   const story = clean(prompt);
 
-  const seconds =
-    Math.max(
-      10,
-      Math.min(
-        60,
-        Number(duration) || 60
-      )
-    );
+  const seconds = Math.max(
+    10,
+    Math.min(
+      60,
+      Number(duration) || 60
+    )
+  );
 
   const sceneCount =
     Math.floor(seconds / 10);
@@ -854,15 +1006,23 @@ function generateProject(prompt, duration, aspectRatio) {
   const characters =
     analyzeCharacters(story);
 
+  const protagonist =
+    findProtagonist(characters);
+
   let beats =
     buildStoryBeats(story);
 
-  beats =
-    resolveLocations(beats, story);
-
   if (!beats.length) {
-    throw new Error("No story beats detected.");
+    throw new Error(
+      "No story beats detected."
+    );
   }
+
+  beats =
+    resolveLocations(
+      beats,
+      story
+    );
 
   const sceneGroups =
     allocateScenes(
@@ -880,6 +1040,7 @@ function generateProject(prompt, duration, aspectRatio) {
           index,
           group,
           characters,
+          protagonist,
           usedDialogue
         )
     );
@@ -889,7 +1050,7 @@ function generateProject(prompt, duration, aspectRatio) {
 
   if (errors.length) {
     console.warn(
-      "V41 validation:",
+      `${ENGINE_VERSION} validation:`,
       errors
     );
   }
@@ -900,11 +1061,11 @@ function generateProject(prompt, duration, aspectRatio) {
     mode: "LOCAL_STORY_INTELLIGENCE",
     duration: seconds,
     total_scenes: sceneCount,
-    aspect_ratio: aspectRatio || "16:9",
+    aspect_ratio:
+      aspectRatio || "16:9",
     scenes
   };
 }
-
 
 // ============================================================
 // API
@@ -915,52 +1076,57 @@ app.get("/api/test", (req, res) => {
     status: "success",
     engine: ENGINE_VERSION,
     message:
-      "SANAPTAI V41 story intelligence engine is running.",
+      "SANAPTAI final story intelligence engine is running.",
     gemini: "disabled",
     video_generation: "disabled"
   });
 });
 
-
-app.post("/api/demo-project", (req, res) => {
-  try {
-    const {
-      prompt,
-      duration,
-      aspectRatio
-    } = req.body || {};
-
-    if (!prompt || !String(prompt).trim()) {
-      return res.status(400).json({
-        success: false,
-        error: "Video prompt is required."
-      });
-    }
-
-    const project =
-      generateProject(
+app.post(
+  "/api/demo-project",
+  (req, res) => {
+    try {
+      const {
         prompt,
         duration,
         aspectRatio
+      } = req.body || {};
+
+      if (
+        !prompt ||
+        !String(prompt).trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Video prompt is required."
+        });
+      }
+
+      const project =
+        generateProject(
+          prompt,
+          duration,
+          aspectRatio
+        );
+
+      res.json(project);
+
+    } catch (error) {
+      console.error(
+        `${ENGINE_VERSION} ERROR:`,
+        error
       );
 
-    res.json(project);
-
-  } catch (error) {
-    console.error(
-      "SANAPTAI V41 ERROR:",
-      error
-    );
-
-    res.status(500).json({
-      success: false,
-      error:
-        error.message ||
-        "Story generation failed."
-    });
+      res.status(500).json({
+        success: false,
+        error:
+          error.message ||
+          "Story generation failed."
+      });
+    }
   }
-});
-
+);
 
 app.get("/", (req, res) => {
   res.sendFile(
@@ -971,7 +1137,6 @@ app.get("/", (req, res) => {
     )
   );
 });
-
 
 app.listen(PORT, () => {
   console.log(
