@@ -1825,7 +1825,7 @@ app.post("/api/plan-scenes", (req, res) => {
    FRONTEND FALLBACK
 ========================================================= */
 
-app.get("*", (req, res) => {
+app.use((req, res) => {
   res.sendFile(
     path.join(__dirname, "public", "index.html")
   );
