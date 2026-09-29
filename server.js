@@ -817,7 +817,7 @@ function createScene(bundle, number) {
     location,
     objects,
 
-    visual_prompt,
+    visual_prompt: visualPrompt,
 
     camera: camera(bundle),
     lighting: lighting(bundle),
