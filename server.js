@@ -282,37 +282,27 @@ SCENE DISTRIBUTION
 */
 
 function distributeGroups(groups, sceneCount) {
-  const scenes = Array.from(
-    { length: sceneCount },
-    () => []
-  );
+  const scenes = Array.from({ length: sceneCount }, () => []);
 
-  let sceneIndex = 0;
+  const safeGroups = Array.isArray(groups)
+    ? groups.filter((g) => Array.isArray(g) && g.length > 0)
+    : [];
 
-  for (const group of groups) {
+  if (safeGroups.length === 0) {
+    return scenes;
+  }
+
+  safeGroups.forEach((group, index) => {
+    const sceneIndex = Math.min(
+      Math.floor(index * sceneCount / safeGroups.length),
+      sceneCount - 1
+    );
+
     scenes[sceneIndex].push(group);
+  });
 
-    if (
-      scenes[sceneIndex].length >= 3 &&
-      sceneIndex < sceneCount - 1
-    ) {
-      sceneIndex++;
-    }
-  }
-
-  /*
-  If some scenes are empty, rebalance.
-  */
-  for (let i = 0; i < scenes.length; i++) {
-    if (scenes[i].length === 0 && i > 0) {
-      const previous = scenes[i - 1];
-
-      if (previous.length > 1) {
-        scenes[i].push(previous.pop());
-      }
-    }
-  }
-
+  // Empty scenes को पिछले available group से भरना नहीं है।
+  // इससे duplicate events और iterable errors से बचते हैं।
   return scenes;
 }
 
