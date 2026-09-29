@@ -1,1143 +1,1157 @@
 import express from "express";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
+import { GoogleGenAI } from "@google/genai";
 
 const app = express();
-const PORT = process.env.PORT || 10000;
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static("public"));
 
-const ENGINE_VERSION = "V20";
+const PORT = process.env.PORT || 3000;
+
+const ENGINE_VERSION = "V21";
 const DEMO_MODE = true;
 const GEMINI_ENABLED = false;
 
+const ALLOWED_DURATIONS = [10, 30, 60, 300, 600, 1200];
+const SCENE_SECONDS = 10;
+
+/* =========================================================
+   BASIC UTILITIES
+========================================================= */
+
 function cleanText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\.\.+/g, ".")
+    .trim();
 }
 
 function unique(items) {
-  return [...new Set(items.filter(Boolean))];
+  return [...new Set((items || []).filter(Boolean))];
 }
 
-function sceneTimes(sceneNumber) {
-  const start = (sceneNumber - 1) * 10;
-  const end = start + 10;
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function sceneTimes(index) {
+  const start = index * SCENE_SECONDS;
+  const end = start + SCENE_SECONDS;
+
+  const format = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
 
   return {
-    start_time: `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`,
-    end_time: `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`
+    start_time: format(start),
+    end_time: format(end)
   };
 }
 
 /* =========================================================
-   CHARACTER LOCKS
+   CHARACTER SYSTEM
 ========================================================= */
 
-const CHARACTER_LOCKS = {
-  Noah:
-    "Noah, a 14-year-old boy with dark brown eyes, short slightly messy black hair, slim teenage build, wearing a casual blue shirt, dark jeans, and white sneakers.",
-
-  Father:
-    "Noah's adult father, medium build, short dark hair, practical everyday clothing.",
-
-  Villagers:
-    "Coastal-town villagers in practical everyday clothing.",
-
-  RescueCrew:
-    "Professional rescue crew wearing weatherproof rescue clothing.",
-
-  "Delivery Driver":
-    "Young delivery driver with consistent face, age, hairstyle, clothing, and body proportions.",
-
-  Hiker:
-    "Injured adult hiker with consistent face, age, hairstyle, clothing, and body proportions.",
-
-  "Main Character":
-    "Main character with consistent face, age, hairstyle, clothing, body proportions, and appearance throughout the entire video."
+const DEFAULT_CHARACTER = {
+  name: "Main Character",
+  description:
+    "Keep the same face, age, hairstyle, clothing, body proportions, and visual identity throughout the entire story."
 };
 
-/* =========================================================
-   NOAH CORE EVENTS
-========================================================= */
-
-function createNoahCoreEvents() {
-  return [
-    {
-      id: "E01",
-      type: "setup",
-      action:
-        "Noah and his father walk together along the quiet streets of their coastal town.",
-      characters: ["Noah", "Father"],
-      location: "Coastal Town",
-      props: [],
-      dialogue: "This town has always been home to us.",
-      voiceover:
-        "Fourteen-year-old Noah lives with his father in a small coastal town."
-    },
-
-    {
-      id: "E02",
-      type: "setup",
-      action:
-        "Noah enters his father's workshop and looks around the familiar workbench.",
-      characters: ["Noah", "Father"],
-      location: "Father's Workshop",
-      props: ["Workbench", "Tools"],
-      dialogue: "Dad, what are you working on?",
-      voiceover:
-        "One morning, Noah visits his father's workshop."
-    },
-
-    {
-      id: "E03",
-      type: "discovery",
-      action:
-        "Noah notices an old lighthouse journal resting on the workshop workbench.",
-      characters: ["Noah"],
-      location: "Father's Workshop",
-      props: ["Lighthouse Journal"],
-      dialogue: "What's this old journal?",
-      voiceover:
-        "Something unusual catches Noah's attention."
-    },
-
-    {
-      id: "E04",
-      type: "discovery",
-      action:
-        "Noah picks up the old lighthouse journal and opens its worn pages.",
-      characters: ["Noah"],
-      location: "Father's Workshop",
-      props: ["Lighthouse Journal"],
-      dialogue: "I've never seen this before.",
-      voiceover:
-        "Noah opens the mysterious journal."
-    },
-
-    {
-      id: "E05",
-      type: "warning",
-      action:
-        "Noah reads the journal's warning about a powerful storm approaching the town.",
-      characters: ["Noah"],
-      location: "Father's Workshop",
-      props: ["Lighthouse Journal", "Storm Warning"],
-      dialogue: "A powerful storm is coming.",
-      voiceover:
-        "The journal contains a warning about a powerful storm."
-    },
-
-    {
-      id: "E06",
-      type: "realization",
-      action:
-        "Noah realizes the warning could put the coastal town in serious danger.",
-      characters: ["Noah"],
-      location: "Father's Workshop",
-      props: ["Lighthouse Journal"],
-      dialogue: "People need to know.",
-      voiceover:
-        "Noah realizes the warning cannot be ignored."
-    },
-
-    {
-      id: "E07",
-      type: "decision",
-      action:
-        "Noah firmly decides to leave the workshop and warn the villagers.",
-      characters: ["Noah"],
-      location: "Father's Workshop",
-      props: ["Lighthouse Journal"],
-      dialogue: "I'm going to warn everyone.",
-      voiceover:
-        "Noah decides to warn the town."
-    },
-
-    {
-      id: "E08",
-      type: "movement",
-      action:
-        "Noah walks quickly through the coastal town carrying the lighthouse journal.",
-      characters: ["Noah"],
-      location: "Coastal Town",
-      props: ["Lighthouse Journal"],
-      dialogue: "I have to reach them.",
-      voiceover:
-        "Noah heads into town."
-    },
-
-    {
-      id: "E09",
-      type: "conflict",
-      action:
-        "Noah urgently warns several villagers that a powerful storm is approaching.",
-      characters: ["Noah", "Villagers"],
-      location: "Coastal Town",
-      props: ["Lighthouse Journal"],
-      dialogue: "A dangerous storm is coming!",
-      voiceover:
-        "Noah tries to warn the villagers."
-    },
-
-    {
-      id: "E10",
-      type: "conflict",
-      action:
-        "Several villagers remain unconvinced and question Noah's warning.",
-      characters: ["Noah", "Villagers"],
-      location: "Coastal Town",
-      props: ["Lighthouse Journal"],
-      dialogue: "Why won't they listen?",
-      voiceover:
-        "The villagers do not believe Noah."
-    },
-
-    {
-      id: "E11",
-      type: "conflict",
-      action:
-        "Noah shows the lighthouse journal to the skeptical villagers, but uncertainty remains.",
-      characters: ["Noah", "Villagers"],
-      location: "Coastal Town",
-      props: ["Lighthouse Journal"],
-      dialogue: "Look at the warning!",
-      voiceover:
-        "Noah tries to prove that the warning is real."
-    },
-
-    {
-      id: "E12",
-      type: "climax",
-      action:
-        "Dark storm clouds rapidly gather above the coastal town.",
-      characters: ["Noah", "Villagers"],
-      location: "Coastal Town",
-      props: [],
-      dialogue: "It's starting.",
-      voiceover:
-        "The first signs of the storm appear."
-    },
-
-    {
-      id: "E13",
-      type: "climax",
-      action:
-        "Strong winds sweep through the coastal streets as the villagers react to the worsening weather.",
-      characters: ["Noah", "Villagers"],
-      location: "Coastal Town",
-      props: [],
-      dialogue: "The storm is here!",
-      voiceover:
-        "The weather suddenly becomes dangerous."
-    },
-
-    {
-      id: "E14",
-      type: "climax",
-      action:
-        "Heavy rain begins as villagers hurry to protect themselves from the storm.",
-      characters: ["Noah", "Villagers"],
-      location: "Coastal Town",
-      props: [],
-      dialogue: "Everyone, get somewhere safe!",
-      voiceover:
-        "Heavy rain hits the town."
-    },
-
-    {
-      id: "E15",
-      type: "discovery",
-      action:
-        "Noah looks toward the lighthouse and realizes its signal has stopped working.",
-      characters: ["Noah"],
-      location: "Coastal Town",
-      props: ["Lighthouse Signal"],
-      dialogue: "The lighthouse signal is out.",
-      voiceover:
-        "Then Noah notices another serious problem."
-    },
-
-    {
-      id: "E16",
-      type: "realization",
-      action:
-        "Noah realizes that without the lighthouse signal, boats may not find the harbor safely.",
-      characters: ["Noah"],
-      location: "Coastal Town",
-      props: ["Lighthouse Signal"],
-      dialogue: "The boats won't see the harbor.",
-      voiceover:
-        "Noah understands the danger facing boats offshore."
-    },
-
-    {
-      id: "E17",
-      type: "decision",
-      action:
-        "Noah decides to climb the lighthouse and repair the broken signal himself.",
-      characters: ["Noah"],
-      location: "Coastal Town",
-      props: ["Lighthouse Signal"],
-      dialogue: "I'll fix the signal.",
-      voiceover:
-        "Noah makes a dangerous decision."
-    },
-
-    {
-      id: "E18",
-      type: "movement",
-      action:
-        "Noah moves through the storm toward the lighthouse entrance.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: [],
-      dialogue: "I have to get inside.",
-      voiceover:
-        "Noah reaches the lighthouse."
-    },
-
-    {
-      id: "E19",
-      type: "action",
-      action:
-        "Noah climbs the lighthouse stairs while rain and wind shake the building.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: [],
-      dialogue: "Keep going.",
-      voiceover:
-        "Noah climbs higher into the storm."
-    },
-
-    {
-      id: "E20",
-      type: "discovery",
-      action:
-        "Noah reaches the lighthouse mechanism and sees that the signal system is damaged.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: ["Damaged Signal Mechanism"],
-      dialogue: "The mechanism is damaged.",
-      voiceover:
-        "Noah finally reaches the broken signal."
-    },
-
-    {
-      id: "E21",
-      type: "action",
-      action:
-        "Noah carefully examines the damaged lighthouse mechanism to determine how it can be repaired.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: ["Damaged Signal Mechanism", "Tools"],
-      dialogue: "I can repair this.",
-      voiceover:
-        "Noah studies the damaged mechanism."
-    },
-
-    {
-      id: "E22",
-      type: "action",
-      action:
-        "Noah begins repairing the damaged lighthouse signal using the available tools.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: ["Damaged Signal Mechanism", "Tools"],
-      dialogue: "Come on, work.",
-      voiceover:
-        "Noah begins the difficult repair."
-    },
-
-    {
-      id: "E23",
-      type: "action",
-      action:
-        "Noah continues repairing the lighthouse mechanism despite the violent wind and rain.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: ["Damaged Signal Mechanism", "Tools"],
-      dialogue: "I can't give up.",
-      voiceover:
-        "Despite the storm, Noah keeps working."
-    },
-
-    {
-      id: "E24",
-      type: "climax",
-      action:
-        "The repaired lighthouse signal suddenly activates and shines through the storm.",
-      characters: ["Noah"],
-      location: "Lighthouse",
-      props: ["Lighthouse Signal"],
-      dialogue: "It works!",
-      voiceover:
-        "The lighthouse signal is restored."
-    },
-
-    {
-      id: "E25",
-      type: "rescue",
-      action:
-        "A rescue boat appears offshore and its crew spots the restored lighthouse signal.",
-      characters: ["Rescue Crew"],
-      location: "Coastal Harbor",
-      props: ["Rescue Boat", "Lighthouse Signal"],
-      dialogue: "There it is!",
-      voiceover:
-        "The rescue boat sees the restored signal."
-    },
-
-    {
-      id: "E26",
-      type: "rescue",
-      action:
-        "The rescue boat follows the lighthouse signal toward the safe harbor entrance.",
-      characters: ["Rescue Crew"],
-      location: "Coastal Harbor",
-      props: ["Rescue Boat", "Lighthouse Signal"],
-      dialogue: "Follow the light!",
-      voiceover:
-        "The signal guides the boat toward safety."
-    },
-
-    {
-      id: "E27",
-      type: "rescue",
-      action:
-        "The rescue boat carefully navigates toward the harbor while the lighthouse signal remains visible.",
-      characters: ["Rescue Crew"],
-      location: "Coastal Harbor",
-      props: ["Rescue Boat", "Lighthouse Signal"],
-      dialogue: "We're almost there.",
-      voiceover:
-        "The boat reaches the safe route."
-    },
-
-    {
-      id: "E28",
-      type: "resolution",
-      action:
-        "The rescue boat reaches the harbor safely as the storm begins to weaken.",
-      characters: ["Rescue Crew"],
-      location: "Coastal Harbor",
-      props: ["Rescue Boat"],
-      dialogue: "We're safe.",
-      voiceover:
-        "The boat reaches the harbor as the storm weakens."
-    },
-
-    {
-      id: "E29",
-      type: "resolution",
-      action:
-        "Morning arrives over the coastal town after the storm has passed, leaving wet streets and calm skies.",
-      characters: ["Noah", "Father"],
-      location: "Coastal Town",
-      props: [],
-      dialogue: "The storm is finally over.",
-      voiceover:
-        "By morning, the storm has passed."
-    },
-
-    {
-      id: "E30",
-      type: "resolution",
-      action:
-        "The villagers gather around Noah and thank him for warning the town and restoring the lighthouse signal while he stands beside his proud father.",
-      characters: ["Noah", "Father", "Villagers"],
-      location: "Coastal Town",
-      props: [],
-      dialogue: "You helped save our town, Noah.",
-      voiceover:
-        "With the storm gone, the villagers realize that Noah's warning and courage helped keep the town safe."
-    }
-  ];
-}
-
-/* =========================================================
-   SUB-BEATS
-========================================================= */
-
-function createSubBeats(event) {
-  const map = {
-    E01: [
-      "Noah and his father walk together through the quiet coastal streets.",
-      "Noah and his father share a calm moment as they continue through town."
-    ],
-
-    E02: [
-      "Noah enters the workshop and looks toward his father's workbench.",
-      "His father continues working while Noah looks around the familiar room."
-    ],
-
-    E03: [
-      "Noah notices the old lighthouse journal on the workbench.",
-      "Noah steps closer and studies the worn journal with curiosity."
-    ],
-
-    E04: [
-      "Noah reaches for the old lighthouse journal.",
-      "Noah opens the journal and looks at its aged pages."
-    ],
-
-    E05: [
-      "Noah reads the storm warning written inside the journal.",
-      "Noah's expression changes as he understands the seriousness of the warning."
-    ],
-
-    E06: [
-      "Noah looks concerned after realizing the danger to the town.",
-      "Noah looks toward the workshop entrance, determined to warn everyone."
-    ],
-
-    E07: [
-      "Noah firmly decides to warn the villagers.",
-      "Noah leaves the workshop carrying the journal."
-    ],
-
-    E08: [
-      "Noah walks quickly through the coastal streets.",
-      "Noah continues toward the villagers with the journal in hand."
-    ],
-
-    E09: [
-      "Noah urgently tells the villagers that a powerful storm is coming.",
-      "The villagers turn toward Noah as he holds up the journal."
-    ],
-
-    E10: [
-      "Several villagers exchange skeptical looks after hearing Noah's warning.",
-      "Noah faces the unconvinced villagers and tries to make them understand."
-    ],
-
-    E11: [
-      "Noah holds the journal open and shows the warning to the villagers.",
-      "The villagers look at the journal while remaining uncertain."
-    ],
-
-    E12: [
-      "Dark storm clouds gather above the coastal town.",
-      "Noah and the villagers look upward as the sky rapidly darkens."
-    ],
-
-    E13: [
-      "Strong wind sweeps through the coastal streets.",
-      "Villagers react as the worsening wind makes the danger obvious."
-    ],
-
-    E14: [
-      "Heavy rain begins falling across the town.",
-      "Villagers hurry to protect themselves as the storm intensifies."
-    ],
-
-    E15: [
-      "Noah looks toward the lighthouse through the storm.",
-      "Noah realizes the lighthouse signal has stopped working."
-    ],
-
-    E16: [
-      "Noah looks toward the dark sea with concern.",
-      "Noah realizes boats may not find the harbor without the signal."
-    ],
-
-    E17: [
-      "Noah makes the decision to repair the lighthouse signal.",
-      "Noah turns toward the lighthouse and commits to the dangerous task."
-    ],
-
-    E18: [
-      "Noah reaches the lighthouse entrance through the storm.",
-      "Noah enters the lighthouse and looks toward the staircase."
-    ],
-
-    E19: [
-      "Noah climbs the lighthouse stairs through the violent storm.",
-      "Noah continues climbing as wind and rain shake the lighthouse."
-    ],
-
-    E20: [
-      "Noah reaches the damaged lighthouse mechanism.",
-      "Noah closely inspects the broken signal system."
-    ],
-
-    E21: [
-      "Noah examines the damaged mechanism and identifies the repair point.",
-      "Noah gathers the necessary tools beside the mechanism."
-    ],
-
-    E22: [
-      "Noah begins repairing the damaged lighthouse mechanism.",
-      "Noah carefully works on the signal system with the tools."
-    ],
-
-    E23: [
-      "Noah continues repairing the mechanism while the storm rages outside.",
-      "Noah makes the final repair despite the difficult conditions."
-    ],
-
-    E24: [
-      "The lighthouse signal suddenly activates.",
-      "The restored signal shines brightly through the storm."
-    ],
-
-    E25: [
-      "A rescue boat appears offshore and spots the lighthouse signal.",
-      "The rescue crew turns toward the visible signal."
-    ],
-
-    E26: [
-      "The rescue boat follows the lighthouse signal toward the harbor.",
-      "The rescue crew keeps the boat aligned with the guiding light."
-    ],
-
-    E27: [
-      "The rescue boat moves carefully toward the harbor entrance.",
-      "The boat follows the safe route marked by the lighthouse signal."
-    ],
-
-    E28: [
-      "The rescue boat reaches the harbor safely.",
-      "The storm begins weakening as the boat reaches shelter."
-    ],
-
-    E29: [
-      "Morning sunlight appears over the quiet coastal town.",
-      "Noah and his father look across the town after the storm."
-    ],
-
-    E30: [
-      "The villagers gather around Noah and thank him for helping save the town.",
-      "Noah stands beside his proud father as the safe town begins a peaceful morning."
-    ]
+function normalizeCharacter(character) {
+  return {
+    name: cleanText(character?.name || DEFAULT_CHARACTER.name),
+    description: cleanText(
+      character?.description || DEFAULT_CHARACTER.description
+    )
   };
-
-  return map[event.id] || [event.action, event.action];
 }
 
 /* =========================================================
-   EVENT-AWARE CAMERA
+   STORY EXTRACTION
 ========================================================= */
 
-function cameraForScene(event, beatIndex = 0) {
-  switch (event.type) {
-    case "setup":
-      return beatIndex === 0
-        ? "Wide cinematic establishing shot showing the full environment and characters."
-        : "Medium cinematic shot focused on the characters and their interaction.";
-
-    case "discovery":
-    case "warning":
-      return beatIndex === 0
-        ? "Cinematic close-up focused on the important object or discovery."
-        : "Over-the-shoulder close-up showing the character examining the important object.";
-
-    case "realization":
-      return "Cinematic medium close-up focused on the character's realization and reaction.";
-
-    case "decision":
-      return "Cinematic medium shot showing the character making a determined decision.";
-
-    case "conflict":
-      return beatIndex === 0
-        ? "Cinematic two-shot showing both sides of the conversation and conflict."
-        : "Wide reaction shot showing the characters' disagreement within the environment.";
-
-    case "movement":
-      return "Smooth cinematic tracking shot following the character's movement.";
-
-    case "action":
-      return beatIndex === 0
-        ? "Detailed cinematic close-up showing the character performing the task."
-        : "Medium environmental shot showing the character actively completing the task.";
-
-    case "climax":
-      return beatIndex === 0
-        ? "Dynamic cinematic tracking shot emphasizing the intensity of the moment."
-        : "Wide dramatic shot showing the full scale of the dangerous situation.";
-
-    case "rescue":
-      return beatIndex === 0
-        ? "Long-lens cinematic shot tracking the rescue boat through the storm."
-        : "Wide cinematic harbor shot showing the rescue boat following the lighthouse signal.";
-
-    case "resolution":
-      return beatIndex === 0
-        ? "Wide peaceful cinematic shot showing the safe environment after the danger."
-        : "Wide emotional closing shot showing the characters together in the peaceful environment.";
-
-    default:
-      return "Cinematic medium shot clearly showing the exact stated story action.";
-  }
+function splitStoryIntoSentences(prompt) {
+  return cleanText(prompt)
+    .split(/(?<=[.!?])\s+/)
+    .map((x) => cleanText(x))
+    .filter((x) => x.length > 3);
 }
 
-/* =========================================================
-   EVENT-AWARE LIGHTING
-   IMPORTANT V20 FIX:
-   LIGHTING IS BASED ON EVENT, NOT SCENE NUMBER.
-========================================================= */
+function detectCharacters(prompt) {
+  const text = cleanText(prompt);
 
-function lightingForScene(event) {
-  switch (event.type) {
-    case "setup":
-      if (event.location === "Father's Workshop") {
-        return "Warm natural morning light through workshop windows, calm weather, soft realistic shadows.";
-      }
-
-      return "Clear peaceful daytime lighting, natural coastal sunlight, calm sky, realistic soft shadows.";
-
-    case "discovery":
-    case "warning":
-    case "realization":
-    case "decision":
-      if (event.location === "Father's Workshop") {
-        return "Warm natural morning workshop light, calm weather, soft realistic shadows.";
-      }
-
-      if (event.id === "E15" || event.id === "E20") {
-        return "Heavy storm lighting with dark overcast sky, strong rain, dramatic cool tones, practical lighthouse illumination.";
-      }
-
-      return "Clear daytime lighting appropriate to the current story moment, realistic natural shadows.";
-
-    case "conflict":
-      return "Clear daytime coastal lighting with natural sunlight and realistic soft shadows. The storm has not yet begun.";
-
-    case "movement":
-      if (event.id === "E18") {
-        return "Active storm lighting with dark overcast sky, heavy rain, strong wind, and practical lighthouse illumination.";
-      }
-
-      return "Clear natural daytime lighting with realistic environmental shadows.";
-
-    case "action":
-      return "Heavy storm lighting with dark overcast sky, strong rain, dramatic cool tones, and practical lighthouse illumination.";
-
-    case "climax":
-      return "Dramatic active-storm lighting with dark overcast sky, heavy rain, strong wind, cool tones, and realistic practical light sources.";
-
-    case "rescue":
-      return "Active storm lighting over the coastal harbor, dark clouds, rain, cool dramatic tones, visible lighthouse beam, realistic ocean reflections.";
-
-    case "resolution":
-      return "Peaceful clear morning after the storm, soft golden sunlight, wet reflective surfaces, calm blue sky.";
-
-    default:
-      return "Natural cinematic lighting appropriate to the current story moment.";
-  }
-}
-
-/* =========================================================
-   GENERIC STORY ENGINE
-========================================================= */
-
-function extractCharacters(prompt) {
   const characters = [];
 
-  if (/\bNoah\b/i.test(prompt)) characters.push("Noah");
-  if (/\bEthan\b/i.test(prompt)) characters.push("Ethan");
-  if (/\bfather\b/i.test(prompt)) characters.push("Father");
-  if (/\bmother\b/i.test(prompt)) characters.push("Mother");
-  if (/\bgirl\b/i.test(prompt)) characters.push("Girl");
-  if (/\bboy\b/i.test(prompt)) characters.push("Boy");
-  if (/\bdriver\b/i.test(prompt)) characters.push("Delivery Driver");
-  if (/\bhiker\b/i.test(prompt)) characters.push("Hiker");
+  const knownNames = [
+    "Noah",
+    "Ethan",
+    "Aarav",
+    "Nishant",
+    "Aanya",
+    "Hanuman",
+    "Ram",
+    "Rahul",
+    "Mohan",
+    "Kabir",
+    "Meera",
+    "Arjun"
+  ];
 
-  return unique(characters);
-}
+  for (const name of knownNames) {
+    const regex = new RegExp(`\\b${name}\\b`, "i");
 
-function extractLocation(prompt) {
-  if (/coastal|lighthouse|harbor/i.test(prompt)) return "Coastal Town";
-  if (/forest|cabin/i.test(prompt)) return "Forest";
-  if (/mountain|snow/i.test(prompt)) return "Mountain";
-  if (/workshop/i.test(prompt)) return "Workshop";
-  if (/town/i.test(prompt)) return "Town";
-
-  return "Main Location";
-}
-
-function extractProps(prompt) {
-  const props = [];
-
-  if (/journal/i.test(prompt)) props.push("Journal");
-  if (/map/i.test(prompt)) props.push("Map");
-  if (/box/i.test(prompt)) props.push("Wooden Box");
-  if (/phone|calls for help/i.test(prompt)) props.push("Phone");
-  if (/water/i.test(prompt)) props.push("Water");
-  if (/lighthouse/i.test(prompt)) props.push("Lighthouse");
-  if (/boat/i.test(prompt)) props.push("Boat");
-
-  return unique(props);
-}
-
-function createGenericEvents(prompt) {
-  const sentences = cleanText(prompt)
-    .split(/[.!?]+/)
-    .map(cleanText)
-    .filter(Boolean);
-
-  const characters = extractCharacters(prompt);
-  const location = extractLocation(prompt);
-  const props = extractProps(prompt);
-
-  if (!sentences.length) {
-    return [
-      {
-        id: "E01",
-        type: "setup",
-        action: "The main character stands in the main location.",
-        characters: characters.length ? characters : ["Main Character"],
-        location,
-        props,
-        dialogue: "Something is about to happen.",
-        voiceover: "The story begins."
-      }
-    ];
+    if (regex.test(text)) {
+      characters.push({
+        name,
+        description: `${name}. Maintain exact identity, face, age, hairstyle, clothing, body proportions, and visual appearance throughout the story.`
+      });
+    }
   }
 
+  if (!characters.length) {
+    characters.push(DEFAULT_CHARACTER);
+  }
+
+  return characters.map(normalizeCharacter);
+}
+
+function detectLocations(prompt) {
+  const text = cleanText(prompt).toLowerCase();
+
+  const locations = [];
+
+  const locationRules = [
+    ["coastal town", "Coastal Town"],
+    ["town", "Town"],
+    ["village", "Village"],
+    ["forest", "Forest"],
+    ["cabin", "Cabin"],
+    ["lighthouse", "Lighthouse"],
+    ["workshop", "Workshop"],
+    ["mountain", "Mountain"],
+    ["harbor", "Harbor"],
+    ["harbour", "Harbor"],
+    ["house", "House"],
+    ["home", "Home"],
+    ["city", "City"],
+    ["street", "Street"],
+    ["road", "Road"]
+  ];
+
+  for (const [keyword, label] of locationRules) {
+    if (text.includes(keyword)) {
+      locations.push(label);
+    }
+  }
+
+  return unique(locations);
+}
+
+function detectObjects(prompt) {
+  const text = cleanText(prompt).toLowerCase();
+
+  const objects = [];
+
+  const objectRules = [
+    ["journal", "Journal"],
+    ["map", "Map"],
+    ["box", "Box"],
+    ["phone", "Phone"],
+    ["water", "Water"],
+    ["signal", "Signal"],
+    ["mechanism", "Mechanism"],
+    ["tool", "Tools"],
+    ["tools", "Tools"],
+    ["boat", "Rescue Boat"],
+    ["car", "Vehicle"],
+    ["truck", "Vehicle"],
+    ["backpack", "Backpack"],
+    ["photo", "Photo"]
+  ];
+
+  for (const [keyword, label] of objectRules) {
+    if (text.includes(keyword)) {
+      objects.push(label);
+    }
+  }
+
+  return unique(objects);
+}
+
+/* =========================================================
+   EVENT CLASSIFICATION
+========================================================= */
+
+function classifyEvent(sentence) {
+  const s = sentence.toLowerCase();
+
+  if (
+    /\b(lives|home|town|family|father|mother|friend)\b/.test(s) &&
+    !/\b(find|discover|warn|fight|rescue|repair|escape)\b/.test(s)
+  ) {
+    return "setup";
+  }
+
+  if (/\b(find|finds|discover|discovers|sees|notices|hears)\b/.test(s)) {
+    return "discovery";
+  }
+
+  if (/\b(read|reads|learns|realizes|understands|recognizes)\b/.test(s)) {
+    return "realization";
+  }
+
+  if (/\b(decides|decide|chooses|tries|attempts)\b/.test(s)) {
+    return "decision";
+  }
+
+  if (
+    /\b(warn|warning|believe|believes|refuse|refuses|doubt|doubts)\b/.test(s)
+  ) {
+    return "conflict";
+  }
+
+  if (/\b(walk|walks|runs|runs|goes|go|travels|moves|climbs|enters)\b/.test(s)) {
+    return "movement";
+  }
+
+  if (
+    /\b(repair|repairs|fix|fixes|build|builds|opens|calls|gives|helps)\b/.test(
+      s
+    )
+  ) {
+    return "action";
+  }
+
+  if (
+    /\b(storm|danger|dangerous|attack|fight|chase|trapped|escape)\b/.test(s)
+  ) {
+    return "climax";
+  }
+
+  if (/\b(rescue|rescues|saved|save|safe|safely)\b/.test(s)) {
+    return "rescue";
+  }
+
+  if (
+    /\b(by morning|sunrise|finally|after|returns|return|home safely)\b/.test(s)
+  ) {
+    return "resolution";
+  }
+
+  return "story";
+}
+
+/* =========================================================
+   STORY EVENTS
+========================================================= */
+
+function buildStoryEvents(prompt) {
+  const sentences = splitStoryIntoSentences(prompt);
+
   return sentences.map((sentence, index) => ({
-    id: `E${String(index + 1).padStart(2, "0")}`,
-    type:
-      index === 0
-        ? "setup"
-        : index === sentences.length - 1
-        ? "resolution"
-        : "action",
-    action: sentence,
-    characters: characters.length ? characters : ["Main Character"],
-    location,
-    props,
-    dialogue: "",
-    voiceover: sentence
+    id: `E${String(index + 1).padStart(3, "0")}`,
+    order: index + 1,
+    source: sentence,
+    type: classifyEvent(sentence),
+    characters: [],
+    location: null,
+    objects: [],
+    action: sentence
   }));
 }
 
-function buildGenericTimeline(prompt, totalScenes) {
-  const events = createGenericEvents(prompt);
+/* =========================================================
+   EVENT CONTEXT ENGINE
+========================================================= */
+
+function inferEventLocation(event, locations) {
+  const s = event.source.toLowerCase();
+
+  const locationRules = [
+    ["lighthouse", "Lighthouse"],
+    ["workshop", "Workshop"],
+    ["harbor", "Harbor"],
+    ["harbour", "Harbor"],
+    ["cabin", "Cabin"],
+    ["forest", "Forest"],
+    ["mountain", "Mountain"],
+    ["village", "Village"],
+    ["town", "Coastal Town"],
+    ["street", "Street"],
+    ["home", "Home"],
+    ["house", "House"]
+  ];
+
+  for (const [keyword, location] of locationRules) {
+    if (s.includes(keyword)) {
+      return location;
+    }
+  }
+
+  return locations[0] || "Story Location";
+}
+
+function inferEventObjects(event, objects) {
+  const s = event.source.toLowerCase();
+
+  return objects.filter((object) => {
+    const o = object.toLowerCase();
+
+    if (o === "journal") {
+      return /\b(journal|warning)\b/.test(s);
+    }
+
+    if (o === "signal") {
+      return /\bsignal\b/.test(s);
+    }
+
+    if (o === "mechanism") {
+      return /\bmechanism\b/.test(s);
+    }
+
+    if (o === "tools") {
+      return /\b(tool|tools|repair|fix)\b/.test(s);
+    }
+
+    if (o === "rescue boat") {
+      return /\bboat\b/.test(s);
+    }
+
+    return s.includes(o);
+  });
+}
+
+function inferEventCharacters(event, characters) {
+  const s = event.source.toLowerCase();
+
+  const matched = characters.filter((character) =>
+    s.includes(character.name.toLowerCase())
+  );
+
+  if (matched.length) {
+    return matched.map((x) => x.name);
+  }
+
+  return characters.slice(0, 1).map((x) => x.name);
+}
+
+function enrichEvents(events, characters, locations, objects) {
+  return events.map((event) => ({
+    ...event,
+    characters: inferEventCharacters(event, characters),
+    location: inferEventLocation(event, locations),
+    objects: inferEventObjects(event, objects)
+  }));
+}
+
+/* =========================================================
+   SUB-BEAT ENGINE
+========================================================= */
+
+function createSubBeats(event) {
+  const source = cleanText(event.source);
+
+  switch (event.type) {
+    case "setup":
+      return [
+        {
+          phase: "establish",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "observe",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "discovery":
+      return [
+        {
+          phase: "notice",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "examine",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "realization":
+      return [
+        {
+          phase: "understand",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "react",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "decision":
+      return [
+        {
+          phase: "decide",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "commit",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "conflict":
+      return [
+        {
+          phase: "confront",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "reaction",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "movement":
+      return [
+        {
+          phase: "move",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "arrive",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "action":
+      return [
+        {
+          phase: "begin",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "perform",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "climax":
+      return [
+        {
+          phase: "danger",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "critical",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "rescue":
+      return [
+        {
+          phase: "rescue",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "safety",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    case "resolution":
+      return [
+        {
+          phase: "aftermath",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "resolution",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+
+    default:
+      return [
+        {
+          phase: "main",
+          action: source,
+          sourceEvent: event.id
+        },
+        {
+          phase: "detail",
+          action: source,
+          sourceEvent: event.id
+        }
+      ];
+  }
+}
+
+/* =========================================================
+   STORY PHASE
+========================================================= */
+
+function getStoryPhase(events, eventIndex) {
+  const total = Math.max(events.length - 1, 1);
+  const progress = eventIndex / total;
+
+  if (progress < 0.15) return "setup";
+  if (progress < 0.35) return "development";
+  if (progress < 0.60) return "conflict";
+  if (progress < 0.82) return "climax";
+  if (progress < 0.94) return "resolution";
+  return "final";
+}
+
+/* =========================================================
+   CAMERA ENGINE
+========================================================= */
+
+function cameraForEvent(event, beat) {
+  const type = event.type;
+
+  if (type === "setup") {
+    return beat === "establish"
+      ? "Wide cinematic establishing shot showing the environment and characters."
+      : "Medium cinematic shot showing the characters naturally within the location.";
+  }
+
+  if (type === "discovery") {
+    return beat === "notice"
+      ? "Medium shot showing the character noticing the story-relevant object."
+      : "Over-the-shoulder close-up showing the character examining the story-relevant object.";
+  }
+
+  if (type === "realization") {
+    return "Medium close-up focused on the character's reaction while keeping the relevant story object visible.";
+  }
+
+  if (type === "decision") {
+    return "Medium cinematic shot focused on the character making the decision.";
+  }
+
+  if (type === "conflict") {
+    return beat === "confront"
+      ? "Medium-wide shot showing the characters facing each other."
+      : "Wide reaction shot showing the disagreement within the environment.";
+  }
+
+  if (type === "movement") {
+    return beat === "move"
+      ? "Wide tracking shot following the character's movement."
+      : "Medium arrival shot showing the character reaching the story location.";
+  }
+
+  if (type === "action") {
+    return "Detailed cinematic close-up showing the character performing the exact task.";
+  }
+
+  if (type === "climax") {
+    return "Dynamic cinematic shot emphasizing the immediate danger without adding unrelated events.";
+  }
+
+  if (type === "rescue") {
+    return "Wide cinematic shot clearly showing the rescue and the characters involved.";
+  }
+
+  if (type === "resolution") {
+    return "Wide emotional cinematic shot showing the characters in the resolved environment.";
+  }
+
+  return "Medium cinematic shot focused on the exact story action.";
+}
+
+/* =========================================================
+   LIGHTING ENGINE
+========================================================= */
+
+function lightingForEvent(event, previousEvent = null) {
+  const text = `${event.source} ${previousEvent?.source || ""}`.toLowerCase();
+
+  if (/\bstorm|heavy rain|strong wind|danger\b/.test(text)) {
+    return "Dramatic storm lighting with dark overcast sky, strong rain, cool realistic tones, and natural environmental shadows.";
+  }
+
+  if (/\bsunrise|morning after|by morning|after the storm|safe\b/.test(text)) {
+    return "Peaceful clear morning lighting, soft natural sunlight, calm atmosphere, realistic soft shadows.";
+  }
+
+  if (event.location === "Workshop") {
+    return "Warm natural morning workshop lighting, calm weather, realistic soft shadows.";
+  }
+
+  if (event.location === "Lighthouse") {
+    return "Natural coastal daylight with realistic lighthouse interior illumination and soft environmental shadows.";
+  }
+
+  return "Clear natural daytime lighting with realistic soft shadows.";
+}
+
+/* =========================================================
+   DIALOGUE ENGINE
+========================================================= */
+
+function createDialogue(event) {
+  const type = event.type;
+
+  if (type === "setup") {
+    return "This place has always felt like home.";
+  }
+
+  if (type === "discovery") {
+    return "What is this?";
+  }
+
+  if (type === "realization") {
+    return "This warning is serious.";
+  }
+
+  if (type === "decision") {
+    return "I have to do something.";
+  }
+
+  if (type === "conflict") {
+    return "Please, you have to believe me.";
+  }
+
+  if (type === "movement") {
+    return "I need to get there now.";
+  }
+
+  if (type === "action") {
+    return "I can't give up.";
+  }
+
+  if (type === "climax") {
+    return "Stay calm. We've got this.";
+  }
+
+  if (type === "rescue") {
+    return "You're safe now.";
+  }
+
+  if (type === "resolution") {
+    return "It's finally over.";
+  }
+
+  return "";
+}
+
+/* =========================================================
+   VOICEOVER ENGINE
+========================================================= */
+
+function createVoiceover(event) {
+  return cleanText(event.source);
+}
+
+/* =========================================================
+   CHARACTER LOCK
+========================================================= */
+
+function buildCharacterLock(characters) {
+  return characters
+    .map(
+      (character) =>
+        `${character.name}: ${character.description}`
+    )
+    .join(" | ");
+}
+
+/* =========================================================
+   SCENE VISUAL PROMPT
+========================================================= */
+
+function buildVisualPrompt({
+  event,
+  beat,
+  sceneNumber,
+  characters,
+  previousEvent
+}) {
+  const characterNames = event.characters.length
+    ? event.characters.join(", ")
+    : characters.map((x) => x.name).join(", ");
+
+  const characterLock = buildCharacterLock(characters);
+
+  const location = event.location || "Story Location";
+
+  const props =
+    event.objects.length > 0
+      ? `Required story-relevant props only: ${event.objects.join(", ")}.`
+      : "No unnecessary props.";
+
+  const camera = cameraForEvent(event, beat.phase);
+
+  const lighting = lightingForEvent(event, previousEvent);
+
+  return [
+    "Cinematic 16:9 video scene.",
+    `Scene ${sceneNumber}.`,
+    `Exact story action: ${event.action}.`,
+    `Characters: ${characterNames}.`,
+    `Location: ${location}.`,
+    props,
+    `Camera: ${camera}`,
+    `Lighting: ${lighting}`,
+    `Character continuity: ${characterLock}`,
+    "Show only the exact story action stated in this scene.",
+    "Do not introduce unrelated people, vehicles, animals, objects, locations, or events.",
+    "Do not introduce characters before they are required by the story.",
+    "Preserve chronological story order.",
+    "Do not describe future actions.",
+    "Do not describe preparation for a future scene.",
+    "Do not use meta wording such as continue the story, develop this event, prepare for next action, or story continues.",
+    "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, and visual style throughout the entire video."
+  ].join(" ");
+}
+
+/* =========================================================
+   TIMELINE BUILDER
+========================================================= */
+
+function buildTimeline(events, durationSeconds) {
+  const requiredScenes = durationSeconds / SCENE_SECONDS;
+
+  if (events.length === 0) {
+    return [];
+  }
+
+  /*
+    First pass:
+    every source event gets chronological sub-beats.
+  */
+
+  const expanded = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    const subBeats = createSubBeats(event);
+
+    for (const beat of subBeats) {
+      expanded.push({
+        event,
+        beat,
+        eventIndex: i
+      });
+    }
+  }
+
+  /*
+    If the story is shorter than the requested video,
+    distribute scenes across the existing chronological events.
+    Never reset to event 1.
+  */
+
   const timeline = [];
 
-  for (let i = 0; i < totalScenes; i++) {
-    const event = events[i % events.length];
+  for (let i = 0; i < requiredScenes; i++) {
+    const sourceIndex = Math.floor(
+      (i / requiredScenes) * expanded.length
+    );
 
-    timeline.push({
-      ...event,
-      beat_index: i % 2,
-      beat_text: event.action,
-      source_event: event.id
-    });
+    const safeIndex = clamp(
+      sourceIndex,
+      0,
+      expanded.length - 1
+    );
+
+    timeline.push(expanded[safeIndex]);
   }
 
   return timeline;
 }
 
 /* =========================================================
-   NOAH DETECTION
+   VALIDATOR
 ========================================================= */
 
-function isNoahStory(prompt) {
-  const text = prompt.toLowerCase();
+function validateScene(scene, previousScene, allEvents) {
+  const errors = [];
 
-  return (
-    text.includes("noah") &&
-    text.includes("lighthouse") &&
-    text.includes("storm")
-  );
-}
-
-/* =========================================================
-   NOAH TIMELINE
-========================================================= */
-
-function buildNoahTimeline(totalScenes) {
-  const core = createNoahCoreEvents();
-
-  if (totalScenes === 30) {
-    return core.map((event) => ({
-      ...event,
-      beat_index: 0,
-      beat_text: event.action,
-      source_event: event.id
-    }));
+  if (!scene.action) {
+    errors.push("missing_action");
   }
 
-  const timeline = [];
-
-  for (const event of core) {
-    const beats = createSubBeats(event);
-
-    beats.forEach((beat, index) => {
-      timeline.push({
-        ...event,
-        beat_index: index,
-        beat_text: beat,
-        source_event: event.id
-      });
-    });
+  if (!scene.location) {
+    errors.push("missing_location");
   }
 
-  if (totalScenes === 60) {
-    return timeline.slice(0, 60);
+  if (!scene.visual_prompt) {
+    errors.push("missing_visual_prompt");
   }
 
-  if (totalScenes === 120) {
-    const expanded = [];
+  if (scene.scene_number > 1 && previousScene) {
+    const currentEventOrder = scene.event_order;
+    const previousEventOrder = previousScene.event_order;
 
-    for (const item of timeline) {
-      expanded.push({
-        ...item,
-        beat_index: 0,
-        beat_text: item.beat_text
-      });
-
-      expanded.push({
-        ...item,
-        beat_index: 1,
-        beat_text: item.beat_text
-      });
+    if (currentEventOrder < previousEventOrder) {
+      errors.push("chronology_reversed");
     }
-
-    return expanded.slice(0, 120);
   }
 
-  return timeline.slice(0, totalScenes);
-}
+  const finalEvent = allEvents[allEvents.length - 1];
 
-function buildTimeline(prompt, totalScenes) {
-  if (isNoahStory(prompt)) {
-    return buildNoahTimeline(totalScenes);
+  const isFinalEvent =
+    finalEvent &&
+    scene.event_id === finalEvent.id;
+
+  if (!isFinalEvent && scene.type === "resolution") {
+    errors.push("premature_resolution");
   }
 
-  return buildGenericTimeline(prompt, totalScenes);
-}
-
-/* =========================================================
-   SCENE CREATOR
-========================================================= */
-
-function createScenes(prompt, duration, aspectRatio) {
-  const totalScenes = Math.max(
-    1,
-    Math.floor(Number(duration) / 10)
-  );
-
-  const timeline = buildTimeline(prompt, totalScenes);
-
-  return timeline.map((event, index) => {
-    const sceneNumber = index + 1;
-    const times = sceneTimes(sceneNumber);
-
-    const characters = event.characters || ["Main Character"];
-    const props = event.props || [];
-
-    const characterLocks = characters.map((character) => {
-      return (
-        CHARACTER_LOCKS[character] ||
-        `${character}, maintain exactly the same face, age, hairstyle, body proportions, clothing, and appearance in every scene.`
-      );
-    });
-
-    const camera = cameraForScene(
-      event,
-      event.beat_index || 0
-    );
-
-    const lighting = lightingForScene(event);
-
-    const action = cleanText(
-      event.beat_text || event.action
-    );
-
-    const visualPrompt = [
-      `Cinematic ${aspectRatio} video scene.`,
-      `Exact story action: ${action}.`,
-      `Characters: ${characters.join(", ")}.`,
-      `Character continuity: ${characterLocks.join(" ")}`,
-      `Location: ${event.location}.`,
-      props.length
-        ? `Required props only: ${props.join(", ")}.`
-        : "No unnecessary props.",
-      `Camera: ${camera}`,
-      `Lighting: ${lighting}`,
-      "Show only the exact action stated in this scene.",
-      "Do not introduce unrelated people, vehicles, animals, objects, locations, or events.",
-      "Do not introduce characters before they are required by the story.",
-      "Preserve chronological story order.",
-      "Do not describe future actions.",
-      "Do not describe preparation for a future scene.",
-      "Do not use meta wording such as continue the story, develop this event, prepare for next action, or story continues.",
-      "Keep the same character identity and appearance throughout the entire video."
-    ].join(" ");
-
-    return {
-      scene_number: sceneNumber,
-      start_time: times.start_time,
-      end_time: times.end_time,
-
-      source_event: event.source_event,
-      event_type: event.type,
-
-      action,
-      characters,
-      location: event.location,
-      props,
-
-      visual_prompt: visualPrompt,
-
-      camera,
-      lighting,
-
-      dialogue: cleanText(event.dialogue),
-      voiceover: cleanText(event.voiceover),
-
-      continuity:
-        "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, and visual style from previous scenes."
-    };
-  });
-}
-
-/* =========================================================
-   PROJECT CREATOR
-========================================================= */
-
-function createProject(body) {
-  const prompt = cleanText(body.prompt);
-
-  const requestedDuration = Number(body.duration || 30);
-
-  const allowedDurations = [
-    10,
-    30,
-    60,
-    300,
-    600,
-    1200
-  ];
-
-  const duration = allowedDurations.includes(
-    requestedDuration
-  )
-    ? requestedDuration
-    : 30;
-
-  const aspectRatio = body.aspectRatio || "9:16";
-
-  const scenes = createScenes(
-    prompt,
-    duration,
-    aspectRatio
-  );
+  if (
+    /continue the story|story continues|prepare for|next scene|develop this event/i.test(
+      scene.visual_prompt
+    )
+  ) {
+    errors.push("meta_wording");
+  }
 
   return {
-    engine: ENGINE_VERSION,
-    mode: DEMO_MODE ? "DEMO" : "AI",
-    gemini_enabled: GEMINI_ENABLED,
+    valid: errors.length === 0,
+    errors
+  };
+}
 
-    duration,
-    total_scenes: scenes.length,
-    scene_duration_seconds: 10,
-    aspect_ratio: aspectRatio,
+/* =========================================================
+   AUTO-FIX
+========================================================= */
 
-    prompt,
+function autoFixScene(scene, previousScene, allEvents) {
+  const fixed = { ...scene };
+
+  const event = allEvents.find(
+    (x) => x.id === fixed.event_id
+  );
+
+  if (!event) {
+    return fixed;
+  }
+
+  fixed.location = event.location;
+  fixed.characters = event.characters;
+  fixed.objects = event.objects;
+
+  fixed.camera = cameraForEvent(
+    event,
+    fixed.beat_phase
+  );
+
+  fixed.lighting = lightingForEvent(
+    event,
+    previousScene
+      ? allEvents.find((x) => x.id === previousScene.event_id)
+      : null
+  );
+
+  fixed.action = event.action;
+  fixed.dialogue = createDialogue(event);
+  fixed.voiceover = createVoiceover(event);
+
+  fixed.visual_prompt = buildVisualPrompt({
+    event,
+    beat: {
+      phase: fixed.beat_phase
+    },
+    sceneNumber: fixed.scene_number,
+    characters: fixed.character_objects,
+    previousEvent: previousScene
+      ? allEvents.find((x) => x.id === previousScene.event_id)
+      : null
+  });
+
+  return fixed;
+}
+
+/* =========================================================
+   SCENE CREATION
+========================================================= */
+
+function createScenes(prompt, durationSeconds, aspectRatio) {
+  const characters = detectCharacters(prompt);
+  const locations = detectLocations(prompt);
+  const objects = detectObjects(prompt);
+
+  let events = buildStoryEvents(prompt);
+
+  events = enrichEvents(
+    events,
+    characters,
+    locations,
+    objects
+  );
+
+  const timeline = buildTimeline(
+    events,
+    durationSeconds
+  );
+
+  const scenes = [];
+
+  for (let i = 0; i < timeline.length; i++) {
+    const item = timeline[i];
+    const event = item.event;
+    const beat = item.beat;
+
+    const time = sceneTimes(i);
+
+    const scene = {
+      scene_number: i + 1,
+      start_time: time.start_time,
+      end_time: time.end_time,
+      duration: 10,
+
+      aspect_ratio: aspectRatio,
+
+      event_id: event.id,
+      event_order: event.order,
+      type: event.type,
+      beat_phase: beat.phase,
+
+      characters: event.characters,
+      character_objects: characters,
+
+      location: event.location,
+      objects: event.objects,
+
+      visual_prompt: buildVisualPrompt({
+        event,
+        beat,
+        sceneNumber: i + 1,
+        characters,
+        previousEvent:
+          i > 0
+            ? timeline[i - 1].event
+            : null
+      }),
+
+      camera: cameraForEvent(
+        event,
+        beat.phase
+      ),
+
+      lighting: lightingForEvent(
+        event,
+        i > 0
+          ? timeline[i - 1].event
+          : null
+      ),
+
+      action: event.action,
+
+      dialogue: createDialogue(event),
+
+      voiceover: createVoiceover(event),
+
+      continuity:
+        "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, location continuity, and story chronology."
+    };
+
+    scenes.push(scene);
+  }
+
+  /*
+    Validation + automatic correction
+  */
+
+  for (let i = 0; i < scenes.length; i++) {
+    const previous = i > 0 ? scenes[i - 1] : null;
+
+    const result = validateScene(
+      scenes[i],
+      previous,
+      events
+    );
+
+    if (!result.valid) {
+      scenes[i] = autoFixScene(
+        scenes[i],
+        previous,
+        events
+      );
+    }
+  }
+
+  /*
+    Final safety pass:
+    guarantee exact chronological event order.
+  */
+
+  for (let i = 1; i < scenes.length; i++) {
+    if (
+      scenes[i].event_order <
+      scenes[i - 1].event_order
+    ) {
+      scenes[i].event_order =
+        scenes[i - 1].event_order;
+    }
+  }
+
+  return {
+    characters,
+    locations,
+    objects,
+    events,
     scenes
   };
 }
 
 /* =========================================================
-   ROUTES
+   API
 ========================================================= */
-
-app.get("/", (req, res) => {
-  res.send("SANAPTAI V20 is live");
-});
 
 app.get("/api/test", (req, res) => {
   res.json({
-    status: "ok",
+    success: true,
     engine: ENGINE_VERSION,
-    engine_name: "Event-Aware Cinematic Story Engine",
     demo_mode: DEMO_MODE,
     gemini_enabled: GEMINI_ENABLED,
-    exact_scene_duration: "10 seconds",
-    supported_durations: [
-      "10 seconds",
-      "30 seconds",
-      "60 seconds",
-      "5 minutes",
-      "10 minutes",
-      "20 minutes"
-    ],
-    key_fixes: [
-      "Event-aware lighting",
-      "Event-aware camera",
-      "Chronological 60-scene expansion",
-      "Protected final resolution",
-      "No Gemini usage"
-    ]
+    scene_duration: 10,
+    message:
+      "SANAPTAI V21 Universal Story Engine is running."
   });
 });
 
 app.post("/api/demo-project", (req, res) => {
   try {
-    const project = createProject(req.body || {});
-    res.json(project);
+    const {
+      prompt,
+      duration,
+      aspectRatio
+    } = req.body || {};
+
+    const durationSeconds = Number(duration) || 30;
+    const ratio = aspectRatio || "16:9";
+
+    if (!prompt || !String(prompt).trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Story prompt is required."
+      });
+    }
+
+    if (!ALLOWED_DURATIONS.includes(durationSeconds)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Duration must be 10, 30, 60, 300, 600, or 1200 seconds."
+      });
+    }
+
+    const result = createScenes(
+      String(prompt),
+      durationSeconds,
+      ratio
+    );
+
+    res.json({
+      success: true,
+      engine: ENGINE_VERSION,
+      demo_mode: DEMO_MODE,
+
+      duration: durationSeconds,
+      total_scenes: result.scenes.length,
+      aspect_ratio: ratio,
+
+      characters: result.characters,
+      locations: result.locations,
+      objects: result.objects,
+      events: result.events,
+
+      scenes: result.scenes
+    });
   } catch (error) {
-    console.error("Demo Project Error:", error);
+    console.error("Demo project error:", error);
 
     res.status(500).json({
-      error: "Project creation failed",
-      message: error.message
+      success: false,
+      error: error.message || "Project creation failed."
     });
   }
 });
 
 app.post("/api/create-project", (req, res) => {
   try {
-    const project = createProject(req.body || {});
-    res.json(project);
+    const {
+      prompt,
+      duration,
+      aspectRatio
+    } = req.body || {};
+
+    const durationSeconds = Number(duration) || 30;
+    const ratio = aspectRatio || "16:9";
+
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: "Story prompt is required."
+      });
+    }
+
+    const result = createScenes(
+      String(prompt),
+      durationSeconds,
+      ratio
+    );
+
+    res.json({
+      success: true,
+      engine: ENGINE_VERSION,
+      demo_mode: DEMO_MODE,
+      duration: durationSeconds,
+      total_scenes: result.scenes.length,
+      aspect_ratio: ratio,
+      scenes: result.scenes
+    });
   } catch (error) {
-    console.error("Create Project Error:", error);
+    console.error("Create project error:", error);
 
     res.status(500).json({
-      error: "Project creation failed",
-      message: error.message
+      success: false,
+      error: error.message || "Project creation failed."
     });
   }
 });
 
-/* =========================================================
-   FUTURE AI MODE
-========================================================= */
-
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
-    status: "reserved",
+    success: false,
+    engine: ENGINE_VERSION,
     message:
-      "AI scene planning is reserved for a future version. V20 currently uses the deterministic Demo Engine.",
-    gemini_enabled: false
+      "AI scene planning is reserved for a future version. Demo planning is active."
   });
 });
 
 /* =========================================================
-   ERROR HANDLER
-========================================================= */
-
-app.use((err, req, res, next) => {
-  console.error("Server Error:", err);
-
-  res.status(500).json({
-    error: "Internal server error",
-    message: err.message
-  });
-});
-
-/* =========================================================
-   START SERVER
+   SERVER
 ========================================================= */
 
 app.listen(PORT, () => {
