@@ -1352,13 +1352,10 @@ HEALTH
 ========================================================
 */
 
+app.use(express.static("public"));
+
 app.get("/", (req, res) => {
-  res.json({
-    status: "success",
-    app: "SANAPTAI",
-    engine: ENGINE_VERSION,
-    message: "SANAPTAI V35 is online."
-  });
+  res.sendFile(process.cwd() + "/public/index.html");
 });
 
 /*
