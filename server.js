@@ -13,184 +13,60 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 10000;
-
-const ENGINE_VERSION = "V40.0";
+const ENGINE_VERSION = "V41.0";
 
 
 // ============================================================
-// BASIC HELPERS
+// TEXT
 // ============================================================
 
-function cleanText(text = "") {
-  return String(text)
+function clean(s = "") {
+  return String(s)
     .replace(/\s+/g, " ")
     .replace(/\.\.+/g, ".")
     .trim();
 }
 
-function splitStory(text) {
-  return cleanText(text)
-    .split(/(?<=[.!?])\s+/)
-    .map(s => s.trim())
-    .filter(Boolean);
+function sentences(text) {
+  return (text.match(/[^.!?]+[.!?]+/g) || [text])
+    .map(clean)
+    .filter(x => x.length > 5);
+}
+
+function lower(s = "") {
+  return s.toLowerCase();
 }
 
 function unique(arr) {
   return [...new Set(arr.filter(Boolean))];
 }
 
-function lower(text = "") {
-  return text.toLowerCase();
-}
-
 
 // ============================================================
-// CHARACTER INTELLIGENCE
+// STORY ENTITIES
 // ============================================================
 
-const RELATIONSHIP_WORDS = [
-  "mother", "father", "mom", "dad", "grandfather", "grandmother",
-  "brother", "sister", "friend", "wife", "husband", "son", "daughter",
-  "uncle", "aunt", "teacher", "doctor", "police officer"
-];
+const relationshipMap = {
+  mother: "Mother",
+  mom: "Mother",
+  father: "Father",
+  dad: "Father",
+  grandfather: "Grandfather",
+  grandpa: "Grandfather",
+  grandmother: "Grandmother",
+  grandma: "Grandmother",
+  brother: "Brother",
+  sister: "Sister",
+  friend: "Friend",
+  wife: "Wife",
+  husband: "Husband"
+};
 
-const BAD_CHARACTER_WORDS = new Set([
-  "I", "A", "An", "The", "When", "While", "After", "Before",
-  "One", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday",
-  "Thursday", "Friday", "Chicago", "New", "York", "Curious",
-  "Inside", "Outside", "That", "This", "Then", "Later",
-  "Morning", "Evening", "Night", "College"
-]);
-
-function extractCharacters(story) {
-  const chars = [];
-
-  // Explicit names:
-  // named Ryan / named Sarah
-  const named = story.match(/\bnamed\s+([A-Z][a-z]+)\b/g) || [];
-  for (const item of named) {
-    const name = item.replace(/^named\s+/i, "").trim();
-    if (!BAD_CHARACTER_WORDS.has(name)) chars.push(name);
-  }
-
-  // Common "X, a ..." introduction
-  const intro =
-    story.match(/\b([A-Z][a-z]{2,})\s*,?\s+a\s+(?:\d{1,2}-year-old|young|college|teenage|young adult)/g) || [];
-
-  for (const item of intro) {
-    const name = item.split(/[,\s]+/)[0];
-    if (!BAD_CHARACTER_WORDS.has(name)) chars.push(name);
-  }
-
-  // Relationship nouns are characters only if they are actually involved
-  const storyLower = lower(story);
-
-  for (const rel of RELATIONSHIP_WORDS) {
-    if (storyLower.includes(rel)) {
-      const display =
-        rel === "mom" ? "Mother" :
-        rel === "dad" ? "Father" :
-        rel === "grandfather" ? "Grandfather" :
-        rel === "grandmother" ? "Grandmother" :
-        rel.charAt(0).toUpperCase() + rel.slice(1);
-
-      chars.push(display);
-    }
-  }
-
-  return unique(chars);
-}
-
-
-// ============================================================
-// CHARACTER APPEARANCE — ONLY ACTIVE CHARACTERS
-// ============================================================
-
-function charactersForEvent(event, allCharacters) {
-  const text = lower(event.text);
-
-  const result = [];
-
-  for (const character of allCharacters) {
-    const c = lower(character);
-
-    if (text.includes(c)) {
-      result.push(character);
-      continue;
-    }
-
-    const relationshipMap = {
-      mother: ["mother", "mom"],
-      father: ["father", "dad"],
-      grandfather: ["grandfather", "grandpa"],
-      grandmother: ["grandmother", "grandma"],
-      brother: ["brother"],
-      sister: ["sister"],
-      friend: ["friend"],
-      wife: ["wife"],
-      husband: ["husband"]
-    };
-
-    if (
-      relationshipMap[c] &&
-      relationshipMap[c].some(word => text.includes(word))
-    ) {
-      result.push(character);
-    }
-  }
-
-  // If no character is explicitly detected, use protagonist
-  // but NEVER add every character to every scene.
-  if (result.length === 0 && allCharacters.length > 0) {
-    result.push(allCharacters[0]);
-  }
-
-  return unique(result);
-}
-
-
-// ============================================================
-// LOCATION INTELLIGENCE
-// ============================================================
-
-const LOCATION_PATTERNS = [
-  ["apartment", "apartment"],
-  ["small apartment", "apartment"],
-  ["workshop", "workshop"],
-  ["bedroom", "bedroom"],
-  ["kitchen", "kitchen"],
-  ["living room", "living room"],
-  ["home", "home"],
-  ["house", "house"],
-  ["abandoned movie theater", "abandoned movie theater"],
-  ["movie theater", "movie theater"],
-  ["theater", "movie theater"],
-  ["lighthouse", "lighthouse"],
-  ["harbor", "harbor"],
-  ["beach", "beach"],
-  ["school", "school"],
-  ["college", "college"],
-  ["office", "office"],
-  ["restaurant", "restaurant"],
-  ["street", "street"],
-  ["road", "road"],
-  ["forest", "forest"],
-  ["park", "park"],
-  ["hospital", "hospital"],
-  ["airport", "airport"],
-  ["train station", "train station"],
-  ["warehouse", "warehouse"],
-  ["basement", "basement"],
-  ["attic", "attic"],
-  ["castle", "castle"],
-  ["garden", "garden"]
-];
-
-const CITIES = [
+const cities = [
+  "Boston",
   "Chicago",
   "New York",
   "Los Angeles",
-  "Boston",
   "Seattle",
   "Miami",
   "Denver",
@@ -199,107 +75,206 @@ const CITIES = [
   "San Francisco"
 ];
 
-function detectLocations(story) {
-  const found = [];
+function analyzeCharacters(story) {
+  const result = [];
+  const text = story;
 
-  for (const [phrase, display] of LOCATION_PATTERNS) {
-    if (lower(story).includes(phrase)) found.push(display);
+  // "named Alex"
+  for (const m of text.matchAll(/\bnamed\s+([A-Z][a-z]+)\b/g)) {
+    result.push(m[1]);
   }
 
-  for (const city of CITIES) {
-    if (story.includes(city)) found.push(city);
+  // "a 22-year-old ... named Alex" / "Alex is..."
+  for (const m of text.matchAll(
+    /\b([A-Z][a-z]{2,})\b(?=\s+(?:is|lives|works|finds|receives|discovers|travels|takes|opens|notices))/g
+  )) {
+    result.push(m[1]);
   }
 
-  return unique(found);
-}
+  // Relationships only become characters if story actually
+  // describes their presence/action, not merely possession.
+  const t = lower(story);
 
-function locationForEvent(event, previousLocation, locations) {
-  const text = lower(event.text);
+  for (const [word, display] of Object.entries(relationshipMap)) {
+    const regex = new RegExp(
+      `\\b(?:${word})\\b`,
+      "i"
+    );
 
-  // Strong event-specific location rules
-  if (text.includes("abandoned movie theater") ||
-      text.includes("movie theater") ||
-      text.includes("theater")) {
-    return "abandoned movie theater";
+    if (regex.test(t)) {
+      result.push(display);
+    }
   }
 
-  if (
-    text.includes("takes the documents home") ||
-    text.includes("takes them home") ||
-    text.includes("brings") && text.includes("home")
-  ) {
-    return "home";
-  }
+  const chars = unique(result);
 
-  if (
-    text.includes("apartment") ||
-    text.includes("shows the photograph to his mother") ||
-    text.includes("shows them to his mother")
-  ) {
-    return "apartment";
-  }
+  // Remove location/time/common words accidentally captured.
+  const banned = new Set([
+    "Boston",
+    "Chicago",
+    "Saturday",
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Curious",
+    "Inside",
+    "When",
+    "One",
+    "The",
+    "After",
+    "Before"
+  ]);
 
-  // Preserve previous location when event says "inside", "there", etc.
-  if (
-    (text.includes("inside") ||
-      text.includes("there") ||
-      text.includes("that place")) &&
-    previousLocation
-  ) {
-    return previousLocation;
-  }
-
-  for (const [phrase, display] of LOCATION_PATTERNS) {
-    if (text.includes(phrase)) return display;
-  }
-
-  // City is a background location, not a physical location by itself.
-  const city = locations.find(x => CITIES.includes(x));
-  if (city) {
-    return `story location, ${city}`;
-  }
-
-  return previousLocation || "story location";
+  return chars.filter(x => !banned.has(x));
 }
 
 
 // ============================================================
-// OBJECT / CLUE INTELLIGENCE
+// ACTIVE CHARACTER DETECTION
 // ============================================================
 
-const OBJECT_PATTERNS = [
-  ["old film camera", "old film camera"],
-  ["film camera", "film camera"],
-  ["camera", "camera"],
-  ["photographs", "photographs"],
-  ["photograph", "photograph"],
-  ["strange symbol", "strange symbol"],
-  ["symbol", "symbol"],
-  ["hidden metal box", "hidden metal box"],
-  ["metal box", "metal box"],
-  ["box", "box"],
-  ["old letter", "old letter"],
-  ["letter", "letter"],
-  ["family documents", "family documents"],
-  ["documents", "documents"],
-  ["journal", "journal"],
-  ["diary", "diary"],
-  ["map", "map"],
-  ["key", "key"],
-  ["ring", "ring"],
-  ["necklace", "necklace"],
-  ["phone", "phone"],
-  ["laptop", "laptop"],
-  ["boat", "boat"],
-  ["car", "car"]
+function activeCharacters(text, entities) {
+  const t = lower(text);
+  const result = [];
+
+  for (const character of entities) {
+    const c = lower(character);
+
+    if (t.includes(c)) {
+      result.push(character);
+      continue;
+    }
+
+    // Relationship must be doing something in this beat.
+    if (
+      character === "Mother" &&
+      /\b(mother|mom)\b/i.test(text)
+    ) {
+      result.push(character);
+    }
+
+    if (
+      character === "Father" &&
+      /\b(father|dad)\b/i.test(text)
+    ) {
+      result.push(character);
+    }
+
+    // Grandfather is normally BACKSTORY unless physically present.
+    // Words such as "late grandfather", "grandpa's", "grandfather's"
+    // do NOT put him on screen.
+    if (
+      character === "Grandfather" &&
+      /\b(grandfather|grandpa)\b/i.test(text) &&
+      !/\b(lives|walks|stands|sits|speaks|waits|enters|appears|meets|sees)\b/i.test(text)
+    ) {
+      // backstory only
+    }
+  }
+
+  return unique(result);
+}
+
+
+// ============================================================
+// LOCATION MODEL
+// ============================================================
+
+const locationRules = [
+  ["apartment", "apartment"],
+  ["home", "home"],
+  ["house", "house"],
+  ["living room", "living room"],
+  ["bedroom", "bedroom"],
+  ["kitchen", "kitchen"],
+  ["workshop", "workshop"],
+  ["basement", "basement"],
+  ["attic", "attic"],
+  ["abandoned train station", "abandoned train station"],
+  ["train station", "train station"],
+  ["movie theater", "movie theater"],
+  ["theater", "movie theater"],
+  ["lighthouse", "lighthouse"],
+  ["harbor", "harbor"],
+  ["school", "school"],
+  ["college", "college"],
+  ["office", "office"],
+  ["restaurant", "restaurant"],
+  ["hospital", "hospital"],
+  ["airport", "airport"],
+  ["street", "street"],
+  ["road", "road"],
+  ["forest", "forest"],
+  ["park", "park"],
+  ["beach", "beach"]
 ];
 
-function objectsForEvent(event) {
-  const text = lower(event.text);
+function explicitLocation(text) {
+  const t = lower(text);
+
+  for (const [pattern, location] of locationRules) {
+    if (t.includes(pattern)) return location;
+  }
+
+  return null;
+}
+
+function cityFromStory(story) {
+  for (const city of cities) {
+    if (story.includes(city)) return city;
+  }
+  return null;
+}
+
+
+// ============================================================
+// OBJECT NORMALIZATION
+// ============================================================
+
+const objectRules = [
+  ["old film camera", "film camera"],
+  ["film camera", "film camera"],
+  ["camera", "film camera"],
+
+  ["photographs", "photographs"],
+  ["photograph", "photograph"],
+
+  ["old journal", "journal"],
+  ["journal", "journal"],
+
+  ["mysterious red clock", "red clock"],
+  ["red clock", "red clock"],
+  ["clock", "clock"],
+
+  ["locked glass case", "glass case"],
+  ["glass case", "glass case"],
+
+  ["small key", "key"],
+  ["key", "key"],
+
+  ["old wooden locker", "wooden locker"],
+  ["locker", "wooden locker"],
+
+  ["old letter", "letter"],
+  ["letter", "letter"],
+
+  ["family photographs", "family photographs"],
+  ["family documents", "family documents"],
+  ["documents", "documents"],
+
+  ["metal box", "metal box"],
+  ["box", "box"]
+];
+
+function objectsFor(text) {
+  const t = lower(text);
   const found = [];
 
-  for (const [phrase, display] of OBJECT_PATTERNS) {
-    if (text.includes(phrase)) found.push(display);
+  for (const [pattern, object] of objectRules) {
+    if (t.includes(pattern)) found.push(object);
   }
 
   return unique(found);
@@ -307,391 +282,336 @@ function objectsForEvent(event) {
 
 
 // ============================================================
-// EVENT TYPES
+// STORY BEAT ENGINE
 // ============================================================
 
-function detectEventType(text) {
+function classify(text) {
   const t = lower(text);
 
-  if (
-    t.includes("finds") ||
-    t.includes("discovers") ||
-    t.includes("find ")
-  ) return "discovery";
+  if (/lives|is a|works as|works at/.test(t))
+    return "setup";
 
-  if (
-    t.includes("develops") ||
-    t.includes("opens") ||
-    t.includes("reads") ||
-    t.includes("examines")
-  ) return "investigation";
+  if (/receives|finds|discovers|comes across/.test(t))
+    return "discovery";
 
-  if (
-    t.includes("warns") ||
-    t.includes("tells him never") ||
-    t.includes("tells her never") ||
-    t.includes("nervous")
-  ) return "warning";
+  if (/develops|reads|examines|notices|sees|looks at/.test(t))
+    return "investigation";
 
-  if (
-    t.includes("goes to") ||
-    t.includes("runs to") ||
-    t.includes("travels to") ||
-    t.includes("visits")
-  ) return "journey";
+  if (/warns|warning|nervous|tells .* never|tells .* not to/.test(t))
+    return "warning";
 
-  if (
-    t.includes("repairs") ||
-    t.includes("opens") ||
-    t.includes("takes") ||
-    t.includes("removes") ||
-    t.includes("enters")
-  ) return "action";
+  if (/travels|goes to|returns to|arrives|enters/.test(t))
+    return "journey";
 
-  if (
-    t.includes("realizes") ||
-    t.includes("understands") ||
-    t.includes("explaining") ||
-    t.includes("reveal")
-  ) return "revelation";
+  if (/opens|uses|takes|finds.*inside|hidden|unlocks/.test(t))
+    return "action";
 
-  if (
-    t.includes("preserve") ||
-    t.includes("safely") ||
-    t.includes("save") ||
-    t.includes("thank")
-  ) return "resolution";
+  if (/reveals|explains|realizes|understands|learns/.test(t))
+    return "revelation";
+
+  if (/preserve|protect|save|safely|decide/.test(t))
+    return "resolution";
 
   return "narrative";
 }
 
 
-// ============================================================
-// SMART EVENT SPLITTING
-// ============================================================
+// Split sentences into actual causal beats.
+// Example:
+// "Alex discovers a key and uses it to open a locker."
+// becomes:
+// 1. discovers key
+// 2. uses key to open locker
+function splitIntoBeats(sentence) {
+  const s = clean(sentence);
+  const result = [];
 
-function splitCompoundSentence(sentence) {
-  const s = cleanText(sentence);
-  const parts = [];
+  let match;
 
-  // Specific cinematic transitions
-  const patterns = [
-    /\.\s+When\s+/i,
-    /\.\s+But\s+/i,
-    /\.\s+Curious about/i,
-    /\.\s+Inside,\s*/i,
-    /,\s+but\s+/i,
-    /,\s+and\s+(?=[A-Z])/i,
-    /\s+and then\s+/i
-  ];
+  // X discovers/finds A and uses A to B
+  match = s.match(
+    /^(.*?\b(?:discovers|finds|notices)\b.*?)(?:\s+and\s+)(uses\s+.+)$/i
+  );
 
-  let working = s;
+  if (match) {
+    result.push(clean(match[1]));
+    result.push(clean(match[2]));
+    return result;
+  }
 
-  for (const pattern of patterns) {
-    if (pattern.test(working)) {
-      const chunks = working.split(pattern);
+  // "Inside ..., he finds ... and discovers ..."
+  match = s.match(
+    /^(.*?\bfinds\b.*?)(?:\s+and\s+)(discovers\s+.*)$/i
+  );
 
-      for (let i = 0; i < chunks.length; i++) {
-        let chunk = chunks[i].trim();
+  if (match) {
+    result.push(clean(match[1]));
+    result.push(clean(match[2]));
+    return result;
+  }
 
-        if (!chunk) continue;
+  // "shows ... but ..."
+  match = s.match(
+    /^(.*?\bshows\b.*?)(?:,\s*but\s+)(.*)$/i
+  );
 
-        if (i > 0) {
-          if (/^(When|But|Curious|Inside)/i.test(chunk)) {
-            chunk = chunk;
-          }
-        }
+  if (match) {
+    result.push(clean(match[1]));
+    result.push(clean(match[2]));
+    return result;
+  }
 
-        parts.push(chunk);
-      }
+  // "takes ... and realizes ..."
+  match = s.match(
+    /^(.*?\btakes\b.*?)(?:\s+and\s+)(realizes\s+.*)$/i
+  );
 
-      if (parts.length > 1) return parts;
-    }
+  if (match) {
+    result.push(clean(match[1]));
+    result.push(clean(match[2]));
+    return result;
   }
 
   return [s];
 }
 
+function buildStoryBeats(story) {
+  const beats = [];
 
-function extractEvents(story) {
-  const sentences = splitStory(story);
-  const events = [];
+  for (const sentence of sentences(story)) {
+    for (const piece of splitIntoBeats(sentence)) {
+      const text = clean(piece);
 
-  for (const sentence of sentences) {
-    const pieces = splitCompoundSentence(sentence);
+      if (!text) continue;
 
-    for (const piece of pieces) {
-      const text = cleanText(piece);
-
-      if (text.length < 8) continue;
-
-      events.push({
-        id: events.length + 1,
+      beats.push({
+        id: beats.length + 1,
         text,
-        type: detectEventType(text),
-        importance: 1
+        type: classify(text),
+        objects: objectsFor(text)
       });
     }
   }
 
-  return events;
+  return beats;
 }
 
 
 // ============================================================
-// REMOVE BROKEN FRAGMENTS
+// IMPORTANT: CURRENT LOCATION ≠ MENTIONED LOCATION
 // ============================================================
 
-function repairEventText(text) {
-  let s = cleanText(text);
+function resolveLocations(beats, story) {
+  let current = null;
+  const city = cityFromStory(story);
 
-  s = s
-    .replace(/\bWhen\.$/i, "")
-    .replace(/\bBut\.$/i, "")
-    .replace(/\bCurious about the warning\.$/i, "")
-    .replace(/\.\s+\./g, ".")
-    .trim();
+  return beats.map((beat, index) => {
+    const explicit = explicitLocation(beat.text);
 
-  return s;
+    if (explicit) {
+      current = explicit;
+    } else if (!current) {
+      current = "home";
+    }
+
+    return {
+      ...beat,
+      location: current,
+      city
+    };
+  });
 }
 
 
 // ============================================================
-// EVENT IMPORTANCE
+// SCENE ALLOCATION
 // ============================================================
 
-function importanceFor(event) {
-  const t = lower(event.text);
+function scoreBeat(beat) {
+  const t = lower(beat.text);
 
   let score = 1;
 
-  if (
-    t.includes("finds") ||
-    t.includes("discovers") ||
-    t.includes("warns") ||
-    t.includes("hidden") ||
-    t.includes("letter") ||
-    t.includes("documents") ||
-    t.includes("realizes") ||
-    t.includes("save")
-  ) {
-    score += 3;
-  }
+  if (beat.type === "discovery") score += 3;
+  if (beat.type === "warning") score += 3;
+  if (beat.type === "revelation") score += 4;
+  if (beat.type === "resolution") score += 4;
+  if (beat.objects.length) score += 1;
 
   if (
-    t.includes("goes to") ||
-    t.includes("takes") ||
-    t.includes("shows")
+    t.includes("and") ||
+    t.includes("inside") ||
+    t.includes("then")
   ) {
-    score += 2;
+    score += 1;
   }
 
   return score;
 }
 
-
-// ============================================================
-// STORY GROUPING
-// ============================================================
-
-function groupEvents(events) {
-  const groups = [];
-
-  for (const event of events) {
-    event.importance = importanceFor(event);
-
-    const last = groups[groups.length - 1];
-
-    if (!last) {
-      groups.push([event]);
-      continue;
-    }
-
-    const lastText = lower(last[last.length - 1].text);
-    const currentText = lower(event.text);
-
-    // Keep direct cause/effect together when appropriate.
-    const sameObject =
-      (currentText.includes("photograph") && lastText.includes("photograph")) ||
-      (currentText.includes("symbol") && lastText.includes("symbol")) ||
-      (currentText.includes("box") && lastText.includes("box")) ||
-      (currentText.includes("letter") && lastText.includes("letter")) ||
-      (currentText.includes("documents") && lastText.includes("documents"));
-
-    if (sameObject && last.length < 2) {
-      last.push(event);
-    } else {
-      groups.push([event]);
-    }
-  }
-
-  return groups;
-}
-
-
-// ============================================================
-// DISTRIBUTE EVENTS INTO EXACT SCENES
-// ============================================================
-
-function flattenGroups(groups) {
-  return groups.flat();
-}
-
-function distributeEvents(events, sceneCount) {
-  if (events.length === 0) return [];
-
-  const result = Array.from(
-    { length: sceneCount },
+function allocateScenes(beats, count) {
+  const scenes = Array.from(
+    { length: count },
     () => []
   );
 
-  // Critical events get their own scene whenever possible.
-  const critical = events.filter(e => e.importance >= 4);
-
-  if (events.length <= sceneCount) {
-    events.forEach((event, i) => {
-      result[i].push(event);
-    });
-    return result;
+  if (beats.length <= count) {
+    beats.forEach((b, i) => scenes[i].push(b));
+    return scenes;
   }
 
-  // Sequential distribution first.
-  const perScene = Math.ceil(events.length / sceneCount);
+  // Preserve chronological order.
+  // Never reorder beats by importance.
+  let cursor = 0;
 
-  let index = 0;
+  for (let i = 0; i < count; i++) {
+    const remaining = beats.length - cursor;
+    const scenesLeft = count - i;
 
-  for (let s = 0; s < sceneCount; s++) {
-    const remainingEvents = events.length - index;
-    const remainingScenes = sceneCount - s;
+    let take = Math.ceil(remaining / scenesLeft);
 
-    const take = Math.max(
-      1,
-      Math.ceil(remainingEvents / remainingScenes)
-    );
+    // Resolution should remain in final scene.
+    if (i === count - 1) {
+      take = remaining;
+    }
 
-    for (let j = 0; j < take && index < events.length; j++) {
-      result[s].push(events[index++]);
+    for (let j = 0; j < take && cursor < beats.length; j++) {
+      scenes[i].push(beats[cursor++]);
     }
   }
 
-  return result;
+  return scenes;
 }
 
 
 // ============================================================
-// 10 SECOND TIMING
+// DIALOGUE — HISTORY AWARE
 // ============================================================
 
-function sceneTimes(index) {
-  const start = index * 10;
-  const end = start + 10;
+function dialogueFor(sceneBeats, active, usedDialogue) {
+  const text = lower(
+    sceneBeats.map(x => x.text).join(" ")
+  );
 
-  return {
-    start_time: start,
-    end_time: end
-  };
-}
+  const protagonist =
+    active.find(x =>
+      ![
+        "Mother",
+        "Father",
+        "Grandfather",
+        "Grandmother"
+      ].includes(x)
+    ) || active[0] || "Character";
 
+  const mother = active.includes("Mother");
+  const candidate = [];
 
-// ============================================================
-// DIALOGUE ENGINE
-// ============================================================
-
-function dialogueFor(events, characters) {
-  const text = lower(events.map(e => e.text).join(" "));
-  const protagonist = characters[0] || "Character";
-
-  const mother =
-    characters.find(c => lower(c) === "mother") || "Mother";
-
-  if (text.includes("warn") || text.includes("never visit")) {
-    return [
-      {
-        speaker: mother,
-        text: `${protagonist}, stay away from that place.`
-      }
-    ];
+  if (
+    /warn|warning|never visit|stay away|do not go/.test(text) &&
+    mother
+  ) {
+    candidate.push({
+      speaker: "Mother",
+      text: `${protagonist}, stay away from that place.`
+    });
   }
 
-  if (text.includes("film camera") || text.includes("camera")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "Where did Grandpa get this camera?"
-      }
-    ];
+  if (
+    !candidate.length &&
+    /film camera|camera/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "Why did Grandpa keep this camera?"
+    });
   }
 
-  if (text.includes("photograph") || text.includes("photographs")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "Why is this place in Grandpa's photograph?"
-      }
-    ];
+  if (
+    !candidate.length &&
+    /photograph|photographs/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "Why is this place in Grandpa's photograph?"
+    });
   }
 
-  if (text.includes("symbol")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "I've seen this symbol before."
-      }
-    ];
+  if (
+    !candidate.length &&
+    /journal/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "Grandpa wrote about this place."
+    });
   }
 
-  if (text.includes("metal box") || text.includes("hidden box")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "What could be hidden inside?"
-      }
-    ];
+  if (
+    !candidate.length &&
+    /red clock|clock/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "That clock is still working."
+    });
   }
 
-  if (text.includes("letter")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "Grandpa left this here for a reason."
-      }
-    ];
+  if (
+    !candidate.length &&
+    /key/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "There is a key hidden inside."
+    });
   }
 
-  if (text.includes("documents")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "These documents explain our family's past."
-      }
-    ];
+  if (
+    !candidate.length &&
+    /locker/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "What was Grandpa hiding here?"
+    });
   }
 
-  if (text.includes("realizes") || text.includes("family's history")) {
-    return [
-      {
-        speaker: mother,
-        text: "Now I understand what Grandpa was protecting."
-      }
-    ];
+  if (
+    !candidate.length &&
+    /letter/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "Grandpa left this here for a reason."
+    });
   }
 
-  if (text.includes("preserve") || text.includes("safely")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "Let's keep these safe for our family."
-      }
-    ];
+  if (
+    !candidate.length &&
+    /reveal|reveals|realizes|understands|family/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "Now I understand what Grandpa left behind."
+    });
   }
 
-  if (text.includes("goes to") || text.includes("travels")) {
-    return [
-      {
-        speaker: protagonist,
-        text: "I need to see this place myself."
-      }
-    ];
+  if (
+    !candidate.length &&
+    /preserve|safely|protect/.test(text)
+  ) {
+    candidate.push({
+      speaker: protagonist,
+      text: "I'll keep our family's story safe."
+    });
+  }
+
+  // NEVER repeat dialogue.
+  for (const d of candidate) {
+    if (!usedDialogue.has(d.text)) {
+      usedDialogue.add(d.text);
+      return [d];
+    }
   }
 
   return [];
@@ -699,228 +619,160 @@ function dialogueFor(events, characters) {
 
 
 // ============================================================
-// VOICEOVER ENGINE
+// VOICEOVER
 // ============================================================
 
-function makeVoiceover(events) {
-  const raw = events
-    .map(e => repairEventText(e.text))
-    .filter(Boolean)
-    .join(" ");
+function voiceoverFor(beats) {
+  const complete = [];
 
-  // Never return an unfinished fragment.
-  const sentences = raw.match(/[^.!?]+[.!?]+/g) || [];
+  for (const beat of beats) {
+    const text = clean(beat.text);
 
-  if (sentences.length === 0) {
-    return raw;
+    if (
+      text.endsWith(".") ||
+      text.endsWith("!") ||
+      text.endsWith("?")
+    ) {
+      complete.push(text);
+    }
   }
 
-  // Maximum practical voiceover for a 10-second scene.
-  let result = "";
+  // Never cut a sentence in the middle.
+  let output = "";
 
-  for (const sentence of sentences) {
+  for (const sentence of complete) {
     const candidate =
-      result ? `${result} ${sentence.trim()}` : sentence.trim();
+      output
+        ? `${output} ${sentence}`
+        : sentence;
 
-    if (candidate.length > 210) break;
+    if (candidate.length > 230) break;
 
-    result = candidate;
+    output = candidate;
   }
 
-  // If the first complete sentence itself is long,
-  // return it instead of cutting it.
-  return result || sentences[0].trim();
+  return output;
 }
 
 
 // ============================================================
-// CAMERA
+// CAMERA / LIGHTING
 // ============================================================
 
 function cameraFor(type, objects) {
-  if (objects.length > 0) {
-    return "Begin with a medium cinematic shot, move toward the important object with a controlled close-up, then capture the character's reaction.";
+  if (objects.length) {
+    return "Medium cinematic shot followed by a controlled close-up of the important story object, ending on the character's reaction.";
   }
 
   if (type === "journey") {
-    return "Use a cinematic tracking shot following the character's movement, ending with a clear view of the destination.";
+    return "Cinematic tracking shot following the character toward the destination.";
   }
 
   if (type === "warning") {
-    return "Slow push-in toward the characters, emphasizing facial expressions and emotional tension.";
+    return "Slow push-in toward the characters, emphasizing facial expressions and tension.";
   }
 
   if (type === "revelation") {
-    return "Start with a medium shot, then slowly push into a close-up as the realization becomes clear.";
+    return "Slow cinematic push-in ending on an emotional close-up.";
   }
 
   if (type === "resolution") {
-    return "Use a calm medium shot followed by a warm emotional close-up of the characters.";
+    return "Calm medium shot followed by a warm emotional close-up.";
   }
 
-  return "Natural cinematic medium shot with subtle camera movement and clear visual storytelling.";
+  return "Natural cinematic medium shot with subtle camera movement.";
 }
-
-
-// ============================================================
-// LIGHTING
-// ============================================================
 
 function lightingFor(type) {
   if (type === "warning") {
-    return "Dramatic directional lighting with controlled shadows to emphasize tension.";
+    return "Dramatic directional lighting with controlled shadows.";
   }
 
-  if (type === "discovery" || type === "investigation") {
-    return "Focused cinematic lighting that naturally draws attention toward the discovered clue.";
+  if (
+    type === "discovery" ||
+    type === "investigation" ||
+    type === "action"
+  ) {
+    return "Focused cinematic lighting emphasizing the important clue.";
   }
 
-  if (type === "journey") {
-    return "Atmospheric cinematic lighting appropriate to the time of day and environment.";
+  if (
+    type === "revelation" ||
+    type === "resolution"
+  ) {
+    return "Warm natural cinematic lighting supporting emotional understanding.";
   }
 
-  if (type === "revelation" || type === "resolution") {
-    return "Warm natural cinematic lighting suggesting emotional understanding and resolution.";
-  }
-
-  return "Natural cinematic lighting appropriate to the location, time of day, and story mood.";
+  return "Natural cinematic lighting appropriate to the time and location.";
 }
 
 
 // ============================================================
-// VISUAL PROMPT
+// SCENE
 // ============================================================
 
-function createVisualPrompt({
-  location,
-  characters,
-  events,
-  objects,
-  type
-}) {
-  const action = events
-    .map(e => repairEventText(e.text))
-    .filter(Boolean)
+function createScene(index, beats, allCharacters, usedDialogue) {
+  const first = beats[0];
+
+  const action = beats
+    .map(b => b.text)
     .join(" ");
 
-  const characterText =
-    characters.length > 0
-      ? characters.join(", ")
-      : "story characters";
-
-  const objectText =
-    objects.length > 0
-      ? ` Important story objects: ${objects.join(", ")}.`
-      : "";
-
-  return (
-    `Cinematic realistic storytelling. ` +
-    `Location: ${location}. ` +
-    `Characters: ${characterText}. ` +
-    `Action: ${action}.` +
-    objectText +
-    ` Maintain exact character continuity and chronological story logic. ` +
-    `Natural body movement, realistic environment, detailed textures, ` +
-    `believable expressions, cinematic composition, consistent visual identity.`
-  );
-}
-
-
-// ============================================================
-// CONTINUITY
-// ============================================================
-
-function continuityFor(characters, objects, location) {
-  const characterLock =
-    characters.length > 0
-      ? characters.join(", ")
-      : "recurring characters";
-
-  const objectLock =
-    objects.length > 0
-      ? ` Important object continuity: ${objects.join(", ")}.`
-      : "";
-
-  return (
-    `Character continuity lock: ${characterLock}. ` +
-    `Keep identical faces, approximate ages, hairstyles, body proportions, ` +
-    `clothing style, colors, accessories, and physical identity across scenes. ` +
-    `Only show characters who are actually present in the current scene. ` +
-    `Do not randomly redesign or replace recurring characters. ` +
-    `Location continuity: ${location}.` +
-    objectLock
-  );
-}
-
-
-// ============================================================
-// SCENE CREATION
-// ============================================================
-
-function createScene(index, eventGroup, allCharacters, previousLocation, locations) {
-  const repairedEvents = eventGroup.map(e => ({
-    ...e,
-    text: repairEventText(e.text)
-  }));
-
-  const combinedText = repairedEvents
-    .map(e => e.text)
-    .join(" ");
-
-  const event = {
-    ...repairedEvents[0],
-    text: combinedText
-  };
-
-  const characters = charactersForEvent(
-    event,
-    allCharacters
+  const active = unique(
+    beats.flatMap(b =>
+      activeCharacters(b.text, allCharacters)
+    )
   );
 
   const objects = unique(
-    repairedEvents.flatMap(e => objectsForEvent(e))
+    beats.flatMap(b => b.objects)
   );
-
-  const location = locationForEvent(
-    event,
-    previousLocation,
-    locations
-  );
-
-  const type = repairedEvents[0]?.type || "narrative";
 
   const dialogue = dialogueFor(
-    repairedEvents,
-    characters
+    beats,
+    active,
+    usedDialogue
   );
 
-  const voiceover = makeVoiceover(
-    repairedEvents
-  );
+  const voiceover =
+    voiceoverFor(beats);
 
-  const times = sceneTimes(index);
+  const location =
+    first.location || "story location";
 
-  const action = repairedEvents
-    .map(e => e.text)
-    .filter(Boolean)
-    .join(" ");
+  const type =
+    first.type || "narrative";
+
+  const charactersText =
+    active.length
+      ? active.join(", ")
+      : "story protagonist";
+
+  const objectText =
+    objects.length
+      ? ` Important story objects: ${objects.join(", ")}.`
+      : "";
 
   return {
     scene_number: index + 1,
-    start_time: times.start_time,
-    end_time: times.end_time,
+    start_time: index * 10,
+    end_time: (index + 1) * 10,
 
-    visual_prompt: createVisualPrompt({
-      location,
-      characters,
-      events: repairedEvents,
-      objects,
-      type
-    }),
+    visual_prompt:
+      `Cinematic realistic storytelling. ` +
+      `Location: ${location}. ` +
+      `Characters: ${charactersText}. ` +
+      `Action: ${action}.` +
+      objectText +
+      ` Maintain exact chronological story logic and visual continuity. ` +
+      `Natural body movement, realistic environment, detailed textures, ` +
+      `believable expressions, cinematic composition.`,
 
-    camera: cameraFor(type, objects),
+    camera:
+      cameraFor(type, objects),
 
-    lighting: lightingFor(type),
+    lighting:
+      lightingFor(type),
 
     action,
 
@@ -928,11 +780,14 @@ function createScene(index, eventGroup, allCharacters, previousLocation, locatio
 
     voiceover,
 
-    continuity: continuityFor(
-      characters,
-      objects,
-      location
-    )
+    continuity:
+      `Character continuity lock: ${charactersText}. ` +
+      `Keep identical faces, approximate ages, hairstyles, body proportions, ` +
+      `clothing style, colors, accessories, and physical identity across scenes. ` +
+      `Only show characters who are actually present in this scene. ` +
+      `Do not place backstory-only characters physically in the scene. ` +
+      `Location continuity: ${location}.` +
+      objectText
   };
 }
 
@@ -941,46 +796,35 @@ function createScene(index, eventGroup, allCharacters, previousLocation, locatio
 // VALIDATION
 // ============================================================
 
-function validateScenes(scenes) {
+function validate(scenes) {
   const errors = [];
+  const dialogueSeen = new Set();
 
-  scenes.forEach((scene, index) => {
-    if (scene.start_time !== index * 10) {
-      errors.push(
-        `Scene ${scene.scene_number} starts at ${scene.start_time}, expected ${index * 10}.`
-      );
+  scenes.forEach((scene, i) => {
+    if (
+      scene.start_time !== i * 10 ||
+      scene.end_time !== (i + 1) * 10
+    ) {
+      errors.push(`Timing error in scene ${i + 1}`);
     }
 
-    if (scene.end_time !== (index + 1) * 10) {
-      errors.push(
-        `Scene ${scene.scene_number} ends at ${scene.end_time}, expected ${(index + 1) * 10}.`
-      );
+    if (!scene.action) {
+      errors.push(`Empty action in scene ${i + 1}`);
     }
 
-    if (!scene.action || scene.action.length < 5) {
-      errors.push(
-        `Scene ${scene.scene_number} has no meaningful action.`
-      );
+    if (
+      scene.voiceover &&
+      !/[.!?]$/.test(scene.voiceover.trim())
+    ) {
+      errors.push(`Incomplete voiceover in scene ${i + 1}`);
     }
 
-    if (scene.voiceover) {
-      const last = scene.voiceover.trim().slice(-1);
-
-      if (![".", "!", "?"].includes(last)) {
-        errors.push(
-          `Scene ${scene.scene_number} voiceover is not a complete sentence.`
-        );
+    for (const d of scene.dialogue || []) {
+      if (dialogueSeen.has(d.text)) {
+        errors.push(`Repeated dialogue in scene ${i + 1}`);
       }
-    }
 
-    if (Array.isArray(scene.dialogue)) {
-      for (const d of scene.dialogue) {
-        if (d.text && d.text.length > 150) {
-          errors.push(
-            `Scene ${scene.scene_number} dialogue is too long.`
-          );
-        }
-      }
+      dialogueSeen.add(d.text);
     }
   });
 
@@ -989,84 +833,72 @@ function validateScenes(scenes) {
 
 
 // ============================================================
-// PROJECT GENERATOR
+// PROJECT
 // ============================================================
 
 function generateProject(prompt, duration, aspectRatio) {
-  const story = cleanText(prompt);
+  const story = clean(prompt);
 
-  const requestedDuration =
-    Math.max(10, Math.min(60, Number(duration) || 60));
+  const seconds =
+    Math.max(
+      10,
+      Math.min(
+        60,
+        Number(duration) || 60
+      )
+    );
 
   const sceneCount =
-    Math.floor(requestedDuration / 10);
+    Math.floor(seconds / 10);
 
   const characters =
-    extractCharacters(story);
+    analyzeCharacters(story);
 
-  const locations =
-    detectLocations(story);
+  let beats =
+    buildStoryBeats(story);
 
-  const rawEvents =
-    extractEvents(story);
+  beats =
+    resolveLocations(beats, story);
 
-  if (rawEvents.length === 0) {
-    throw new Error(
-      "No meaningful story events could be detected."
-    );
+  if (!beats.length) {
+    throw new Error("No story beats detected.");
   }
-
-  const groups =
-    groupEvents(rawEvents);
-
-  const events =
-    flattenGroups(groups);
 
   const sceneGroups =
-    distributeEvents(events, sceneCount);
+    allocateScenes(
+      beats,
+      sceneCount
+    );
 
-  const scenes = [];
+  const usedDialogue =
+    new Set();
 
-  let previousLocation = null;
+  const scenes =
+    sceneGroups.map(
+      (group, index) =>
+        createScene(
+          index,
+          group,
+          characters,
+          usedDialogue
+        )
+    );
 
-  for (let i = 0; i < sceneCount; i++) {
-    const group =
-      sceneGroups[i].length > 0
-        ? sceneGroups[i]
-        : [events[Math.min(i, events.length - 1)]];
+  const errors =
+    validate(scenes);
 
-    const scene =
-      createScene(
-        i,
-        group,
-        characters,
-        previousLocation,
-        locations
-      );
-
-    previousLocation =
-      scene.continuity
-        .match(/Location continuity: ([^.]+)/)?.[1]
-        || previousLocation;
-
-    scenes.push(scene);
-  }
-
-  const validationErrors =
-    validateScenes(scenes);
-
-  if (validationErrors.length > 0) {
+  if (errors.length) {
     console.warn(
-      "Validation warnings:",
-      validationErrors
+      "V41 validation:",
+      errors
     );
   }
 
   return {
     success: true,
     engine_version: ENGINE_VERSION,
-    mode: "DEMO_LOCAL_STORY_ENGINE",
-    duration: requestedDuration,
+    mode: "LOCAL_STORY_INTELLIGENCE",
+    duration: seconds,
     total_scenes: sceneCount,
     aspect_ratio: aspectRatio || "16:9",
     scenes
@@ -1082,7 +914,8 @@ app.get("/api/test", (req, res) => {
   res.json({
     status: "success",
     engine: ENGINE_VERSION,
-    message: "SANAPTAI V40 engine is running successfully.",
+    message:
+      "SANAPTAI V41 story intelligence engine is running.",
     gemini: "disabled",
     video_generation: "disabled"
   });
@@ -1114,30 +947,31 @@ app.post("/api/demo-project", (req, res) => {
     res.json(project);
 
   } catch (error) {
-    console.error("PROJECT ERROR:", error);
+    console.error(
+      "SANAPTAI V41 ERROR:",
+      error
+    );
 
     res.status(500).json({
       success: false,
-      error: error.message || "Project generation failed."
+      error:
+        error.message ||
+        "Story generation failed."
     });
   }
 });
 
 
-// ============================================================
-// ROOT
-// ============================================================
-
 app.get("/", (req, res) => {
   res.sendFile(
-    path.join(__dirname, "public", "index.html")
+    path.join(
+      __dirname,
+      "public",
+      "index.html"
+    )
   );
 });
 
-
-// ============================================================
-// SERVER
-// ============================================================
 
 app.listen(PORT, () => {
   console.log(
