@@ -9,9 +9,9 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 
-// --------------------------------------------------
-// BASIC HELPERS
-// --------------------------------------------------
+// ==================================================
+// HELPERS
+// ==================================================
 
 function cleanText(text = "") {
   return text
@@ -24,22 +24,23 @@ function splitSentences(text = "") {
   return text
     .replace(/\n+/g, " ")
     .split(/(?<=[.!?])\s+/)
-    .map(s => cleanText(s))
+    .map(cleanText)
     .filter(Boolean);
 }
 
 function sceneTimes(index) {
   const start = index * 10;
   const end = start + 10;
+
   return {
     start_time: `${start}s`,
     end_time: `${end}s`
   };
 }
 
-// --------------------------------------------------
+// ==================================================
 // CHARACTER EXTRACTION
-// --------------------------------------------------
+// ==================================================
 
 function extractCharacters(story) {
   const lower = story.toLowerCase();
@@ -102,9 +103,9 @@ function extractCharacters(story) {
   return characters;
 }
 
-// --------------------------------------------------
+// ==================================================
 // LOCATION EXTRACTION
-// --------------------------------------------------
+// ==================================================
 
 function extractLocations(story) {
   const lower = story.toLowerCase();
@@ -142,9 +143,9 @@ function extractLocations(story) {
   return locations;
 }
 
-// --------------------------------------------------
+// ==================================================
 // OBJECT EXTRACTION
-// --------------------------------------------------
+// ==================================================
 
 function extractObjects(story) {
   const lower = story.toLowerCase();
@@ -178,9 +179,9 @@ function extractObjects(story) {
   return objects;
 }
 
-// --------------------------------------------------
-// SPECIAL STORY: DELIVERY DRIVER + HIKER
-// --------------------------------------------------
+// ==================================================
+// SPECIAL DELIVERY DRIVER STORY ENGINE
+// ==================================================
 
 function createDeliveryDriverEvents(story) {
   const lower = story.toLowerCase();
@@ -203,6 +204,7 @@ function createDeliveryDriverEvents(story) {
         voiceover:
           "The young delivery driver becomes lost while driving through a heavy snowstorm."
       },
+
       {
         id: "E2",
         type: "search",
@@ -215,56 +217,48 @@ function createDeliveryDriverEvents(story) {
         voiceover:
           "The delivery driver realizes he is lost and searches for a safe route."
       },
+
       {
         id: "E3",
         type: "discovery",
         action:
-          "The delivery driver discovers an old cabin and finds an injured hiker inside.",
+          "The delivery driver approaches an old cabin and discovers an injured hiker inside.",
         characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
         props: ["Backpack"],
         dialogue: "Are you hurt?",
         voiceover:
-          "The driver discovers an old cabin and finds an injured hiker inside."
+          "The driver reaches an old cabin and discovers an injured hiker inside."
       },
+
       {
         id: "E4",
         type: "rescue",
         action:
-          "The delivery driver gives the injured hiker water.",
+          "The delivery driver gives the injured hiker water and calls for emergency help.",
         characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
-        props: ["Water"],
-        dialogue: "Here, drink some water.",
+        props: ["Water", "Phone"],
+        dialogue: "Drink this. Help is coming.",
         voiceover:
-          "The driver gives the injured hiker water."
+          "The driver gives the injured hiker water and calls for emergency help."
       },
+
       {
         id: "E5",
-        type: "help",
-        action:
-          "The delivery driver calls for emergency help and stays beside the injured hiker.",
-        characters: ["Delivery Driver", "Injured Hiker"],
-        location: "Mountain Cabin",
-        props: ["Phone"],
-        dialogue: "Stay with me. Help is coming.",
-        voiceover:
-          "The driver calls for help and stays beside the injured hiker."
-      },
-      {
-        id: "E6",
         type: "night",
         action:
-          "The delivery driver remains beside the injured hiker inside the cabin through the dangerous night.",
+          "The delivery driver stays beside the injured hiker through the dangerous night.",
         characters: ["Delivery Driver", "Injured Hiker"],
         location: "Mountain Cabin",
-        props: ["Water"],
+        props: [],
         dialogue: "You're not alone tonight.",
         voiceover:
           "The driver stays beside the injured hiker through the dangerous night."
       },
+
       {
-        id: "E7",
+        id: "E6",
         type: "resolution",
         action:
           "At sunrise, rescuers arrive and safely take the injured hiker home.",
@@ -281,9 +275,9 @@ function createDeliveryDriverEvents(story) {
   return null;
 }
 
-// --------------------------------------------------
-// GENERIC EVENTS
-// --------------------------------------------------
+// ==================================================
+// GENERIC STORY ENGINE
+// ==================================================
 
 function createGenericEvents(story) {
   const sentences = splitSentences(story);
@@ -300,50 +294,29 @@ function createGenericEvents(story) {
   }));
 }
 
-// --------------------------------------------------
-// TIMELINE EXPANSION
-// --------------------------------------------------
+// ==================================================
+// EVENT EXPANSION
+// ==================================================
 
 function expandEvent(event) {
-  if (event.type === "problem") {
-    return [
-      {
-        ...event,
-        action: event.action
-      }
-    ];
-  }
-
-  if (event.type === "search") {
-    return [
-      {
-        ...event,
-        action: event.action
-      }
-    ];
-  }
+  // Important:
+  // Discovery stays as ONE scene.
+  // This prevents the injured hiker from appearing
+  // before the actual discovery.
 
   if (event.type === "discovery") {
-    return [
-      {
-        ...event,
-        action: "The delivery driver approaches the old cabin through the snow.",
-        dialogue: "There has to be shelter nearby.",
-        voiceover:
-          "Through the storm, the driver spots an old cabin in the mountains."
-      },
-      {
-        ...event,
-        action: event.action
-      }
-    ];
-  }
-
-  if (event.type === "rescue") {
     return [event];
   }
 
-  if (event.type === "help") {
+  if (event.type === "problem") {
+    return [event];
+  }
+
+  if (event.type === "search") {
+    return [event];
+  }
+
+  if (event.type === "rescue") {
     return [event];
   }
 
@@ -358,6 +331,10 @@ function expandEvent(event) {
   return [event];
 }
 
+// ==================================================
+// TIMELINE BUILDER
+// ==================================================
+
 function buildTimeline(events, targetScenes) {
   let timeline = [];
 
@@ -365,41 +342,83 @@ function buildTimeline(events, targetScenes) {
     timeline.push(...expandEvent(event));
   }
 
-  // If there are too many scenes, preserve final resolution.
+  // ------------------------------------------------
+  // SPECIAL CASE:
+  // DELIVERY DRIVER STORY
+  // ------------------------------------------------
+
+  if (
+    events.length === 6 &&
+    events[0]?.id === "E1" &&
+    events[1]?.id === "E2" &&
+    events[2]?.id === "E3" &&
+    events[3]?.id === "E4" &&
+    events[4]?.id === "E5" &&
+    events[5]?.id === "E6"
+  ) {
+    // Exactly 6 scenes.
+    // Every important story beat is preserved.
+    return events.slice(0, targetScenes);
+  }
+
+  // ------------------------------------------------
+  // TOO MANY SCENES
+  // ------------------------------------------------
+
   if (timeline.length > targetScenes) {
     const finalEvent = timeline[timeline.length - 1];
+
     timeline = timeline.slice(0, targetScenes - 1);
     timeline.push(finalEvent);
   }
 
-  // If there are fewer scenes, duplicate only through meaningful
-  // action subdivisions rather than generic filler.
+  // ------------------------------------------------
+  // FEWER SCENES
+  // ------------------------------------------------
+
   while (timeline.length < targetScenes) {
     const finalEvent = timeline[timeline.length - 1];
 
-    const filler = {
-      ...finalEvent,
-      action:
-        finalEvent.type === "resolution"
-          ? finalEvent.action
-          : `The characters continue the immediate action: ${finalEvent.action}`,
-      dialogue: finalEvent.dialogue,
-      voiceover: finalEvent.voiceover
-    };
+    if (finalEvent?.type === "resolution") {
+      const arrivalScene = {
+        ...finalEvent,
+        id: `${finalEvent.id}_arrival`,
+        action:
+          "The rescuers arrive and begin helping the characters at the scene.",
+        dialogue: "Help is here.",
+        voiceover:
+          "The rescuers finally arrive to help."
+      };
 
-    timeline.splice(timeline.length - 1, 0, filler);
+      timeline.splice(timeline.length - 1, 0, arrivalScene);
+    } else {
+      const previous = timeline[timeline.length - 1];
 
-    if (timeline.length > targetScenes) {
-      timeline = timeline.slice(0, targetScenes - 1).concat(finalEvent);
+      timeline.push({
+        ...previous,
+        id: `${previous.id}_continuation`,
+        action:
+          `The characters continue the immediate action: ${previous.action}`,
+        dialogue: previous.dialogue,
+        voiceover: previous.voiceover
+      });
     }
+  }
+
+  // Final safety protection.
+  if (timeline.length > targetScenes) {
+    const finalEvent = timeline[timeline.length - 1];
+
+    timeline = timeline.slice(0, targetScenes - 1);
+    timeline.push(finalEvent);
   }
 
   return timeline;
 }
 
-// --------------------------------------------------
+// ==================================================
 // SCENE CONTEXT
-// --------------------------------------------------
+// ==================================================
 
 function getRelevantProps(event) {
   return Array.isArray(event.props) ? event.props : [];
@@ -417,12 +436,13 @@ function getCharacters(event, allCharacters) {
   );
 }
 
-// --------------------------------------------------
+// ==================================================
 // SMART LIGHTING
-// --------------------------------------------------
+// ==================================================
 
 function lightingForScene(event) {
-  const text = `${event.type} ${event.action}`.toLowerCase();
+  const text =
+    `${event.type} ${event.action}`.toLowerCase();
 
   if (
     text.includes("sunrise") ||
@@ -432,7 +452,10 @@ function lightingForScene(event) {
     return "Peaceful sunrise lighting with soft golden daylight, calm atmosphere and realistic early-morning shadows.";
   }
 
-  if (event.type === "night" || text.includes("night")) {
+  if (
+    event.type === "night" ||
+    text.includes("night")
+  ) {
     return "Realistic nighttime cabin lighting with subtle warm practical light contrasting against the cold dark exterior.";
   }
 
@@ -451,9 +474,9 @@ function lightingForScene(event) {
   return "Natural cinematic daylight appropriate to the established location and story moment.";
 }
 
-// --------------------------------------------------
+// ==================================================
 // SMART CAMERA
-// --------------------------------------------------
+// ==================================================
 
 function cameraForScene(event, index, total) {
   if (index === 0) {
@@ -468,16 +491,23 @@ function cameraForScene(event, index, total) {
     return "Medium cinematic shot followed by a subtle push toward the important discovery.";
   }
 
-  if (event.type === "rescue" || event.type === "help") {
+  if (
+    event.type === "rescue" ||
+    event.type === "help"
+  ) {
     return "Natural medium tracking shot following the characters and their immediate actions.";
+  }
+
+  if (event.type === "night") {
+    return "Natural cinematic medium shot with subtle camera movement inside the cabin.";
   }
 
   return "Natural cinematic medium shot with subtle camera movement.";
 }
 
-// --------------------------------------------------
+// ==================================================
 // DIALOGUE
-// --------------------------------------------------
+// ==================================================
 
 function dialogueForScene(event) {
   if (event.dialogue) {
@@ -487,26 +517,30 @@ function dialogueForScene(event) {
   switch (event.type) {
     case "problem":
       return "I need to stay calm.";
+
     case "search":
       return "There has to be a safe way.";
+
     case "discovery":
       return "Are you okay?";
+
     case "rescue":
-      return "Take this. It will help.";
-    case "help":
-      return "Help is on the way.";
+      return "Help is coming.";
+
     case "night":
       return "We'll make it through the night.";
+
     case "resolution":
       return "You're safe now.";
+
     default:
       return "Stay calm. We'll get through this.";
   }
 }
 
-// --------------------------------------------------
+// ==================================================
 // CHARACTER LOCK
-// --------------------------------------------------
+// ==================================================
 
 function characterLockBlock(characters) {
   return characters
@@ -517,12 +551,15 @@ function characterLockBlock(characters) {
     .join(" ");
 }
 
-// --------------------------------------------------
+// ==================================================
 // SCENE CREATION
-// --------------------------------------------------
+// ==================================================
 
 function createScenes(story, duration, aspectRatio) {
-  const targetScenes = Math.max(1, Math.floor(Number(duration) / 10));
+  const targetScenes = Math.max(
+    1,
+    Math.floor(Number(duration) / 10)
+  );
 
   const characters = extractCharacters(story);
   const locations = extractLocations(story);
@@ -534,17 +571,25 @@ function createScenes(story, duration, aspectRatio) {
     events = createGenericEvents(story);
   }
 
-  const timeline = buildTimeline(events, targetScenes);
+  const timeline = buildTimeline(
+    events,
+    targetScenes
+  );
 
   const scenes = timeline.map((event, index) => {
     const times = sceneTimes(index);
 
-    const activeCharacters = getCharacters(event, characters);
-    const relevantProps = getRelevantProps(event);
+    const activeCharacters =
+      getCharacters(event, characters);
+
+    const relevantProps =
+      getRelevantProps(event);
 
     const characterNames =
       activeCharacters.length > 0
-        ? activeCharacters.map(c => c.name).join(", ")
+        ? activeCharacters
+            .map(c => c.name)
+            .join(", ")
         : "Main Character";
 
     const propsText =
@@ -554,7 +599,9 @@ function createScenes(story, duration, aspectRatio) {
 
     const visualPrompt = `
 Cinematic ${aspectRatio} scene.
-Show ONLY this exact story action: ${cleanText(event.action)}
+
+Show ONLY this exact story action:
+${cleanText(event.action)}
 
 Active characters: ${characterNames}.
 Location: ${getLocation(event)}.
@@ -564,9 +611,16 @@ CHARACTER LOCK:
 ${characterLockBlock(characters)}
 
 Maintain exact character identity, face, age, hairstyle, clothing, body proportions and physical appearance.
+
 Keep the same characters consistent across every scene.
+
 Use only characters, props and locations required by this scene.
+
 Do not add unrelated people, vehicles, animals, objects, locations or events.
+
+If a vehicle is listed as a relevant prop, it is required and must appear naturally in the scene.
+If a vehicle is not listed as a relevant prop, do not add one.
+
 Realistic movement, natural facial expressions and believable physical behavior.
 
 Scene ${index + 1} of ${targetScenes}.
@@ -576,12 +630,25 @@ Scene ${index + 1} of ${targetScenes}.
       scene_number: index + 1,
       start_time: times.start_time,
       end_time: times.end_time,
+
       visual_prompt: visualPrompt,
-      camera: cameraForScene(event, index, targetScenes),
+
+      camera: cameraForScene(
+        event,
+        index,
+        targetScenes
+      ),
+
       lighting: lightingForScene(event),
+
       action: cleanText(event.action),
+
       dialogue: dialogueForScene(event),
-      voiceover: cleanText(event.voiceover || event.action),
+
+      voiceover: cleanText(
+        event.voiceover || event.action
+      ),
+
       continuity:
         index === 0
           ? "Opening scene. Establish the story and lock all main character identities."
@@ -595,30 +662,36 @@ Scene ${index + 1} of ${targetScenes}.
     duration: Number(duration),
     total_scenes: targetScenes,
     aspect_ratio: aspectRatio,
+
     characters,
     locations,
     objects,
+
     scenes
   };
 }
 
-// --------------------------------------------------
-// API
-// --------------------------------------------------
+// ==================================================
+// API ROUTES
+// ==================================================
 
 app.get("/", (req, res) => {
-  res.send("SANAPTAI V14.2 is live");
+  res.send("SANAPTAI V14.3 is live");
 });
+
+// --------------------------------------------------
 
 app.get("/api/test", (req, res) => {
   res.json({
     status: "ok",
-    version: "V14.2",
-    engine: "Context-Aware Story Elements",
+    version: "V14.3",
+    engine: "Context-Aware Story Timeline",
     demo_mode: true,
     gemini: false
   });
 });
+
+// --------------------------------------------------
 
 app.post("/api/demo-project", (req, res) => {
   try {
@@ -641,14 +714,22 @@ app.post("/api/demo-project", (req, res) => {
     );
 
     res.json(project);
+
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Demo project error:",
+      error
+    );
 
     res.status(500).json({
-      error: error.message || "Project creation failed."
+      error:
+        error.message ||
+        "Project creation failed."
     });
   }
 });
+
+// --------------------------------------------------
 
 app.post("/api/create-project", (req, res) => {
   try {
@@ -658,6 +739,12 @@ app.post("/api/create-project", (req, res) => {
       aspectRatio = "16:9"
     } = req.body;
 
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({
+        error: "Prompt is required."
+      });
+    }
+
     const project = createScenes(
       prompt.trim(),
       Number(duration),
@@ -665,21 +752,39 @@ app.post("/api/create-project", (req, res) => {
     );
 
     res.json(project);
+
   } catch (error) {
+    console.error(
+      "Create project error:",
+      error
+    );
+
     res.status(500).json({
-      error: error.message || "Project creation failed."
+      error:
+        error.message ||
+        "Project creation failed."
     });
   }
 });
 
-// Gemini intentionally disabled during Demo Mode testing.
+// --------------------------------------------------
+// GEMINI DISABLED FOR DEMO MODE
+// --------------------------------------------------
+
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
-    error: "AI scene planning is reserved for a future version.",
-    version: "V14.2"
+    error:
+      "AI scene planning is reserved for a future version.",
+    version: "V14.3"
   });
 });
 
+// ==================================================
+// SERVER
+// ==================================================
+
 app.listen(PORT, () => {
-  console.log(`SANAPTAI V14.2 running on port ${PORT}`);
+  console.log(
+    `SANAPTAI V14.3 running on port ${PORT}`
+  );
 });
