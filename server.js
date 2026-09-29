@@ -8,134 +8,175 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
 
-const ENGINE_VERSION = "V37.0";
+const ENGINE_VERSION = "V38.0";
 
 /* =========================================================
-   BASIC HELPERS
+   BASIC
 ========================================================= */
 
 function clean(text = "") {
   return String(text)
     .replace(/\s+/g, " ")
-    .replace(/^[\s,.;:]+|[\s,.;:]+$/g, "")
+    .replace(/([.!?])([A-Z])/g, "$1 $2")
     .trim();
 }
 
 function splitStory(prompt) {
   return String(prompt || "")
-    .replace(/\r/g, " ")
+    .replace(/\r?\n/g, " ")
     .split(/(?<=[.!?])\s+/)
     .map(clean)
     .filter(Boolean);
 }
 
 function unique(arr) {
-  return [...new Set((Array.isArray(arr) ? arr : []).filter(Boolean))];
+  return [...new Set(Array.isArray(arr) ? arr : [])];
+}
+
+function lower(text) {
+  return String(text || "").toLowerCase();
 }
 
 /* =========================================================
-   CHARACTER DETECTION
+   CHARACTER INTELLIGENCE
 ========================================================= */
 
+const NON_NAMES = new Set([
+  "A",
+  "An",
+  "The",
+  "One",
+  "Inside",
+  "Outside",
+  "Together",
+  "When",
+  "While",
+  "As",
+  "By",
+  "He",
+  "She",
+  "They",
+  "This",
+  "That",
+  "It",
+  "In",
+  "At",
+  "On",
+  "Then",
+  "Finally",
+  "Next",
+  "Morning",
+  "Evening",
+  "Lucas",
+  "Daniel",
+  "Emma",
+  "Noah"
+]);
+
 function extractCharacters(prompt, sentences) {
+  const text = String(prompt || "");
   const found = [];
 
-  const text = `${prompt} ${sentences.join(" ")}`;
-
-  // "named Daniel", "named Emma"
-  const named = [...text.matchAll(
+  // "named Lucas"
+  for (const match of text.matchAll(
     /\bnamed\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g
-  )];
-
-  for (const match of named) {
+  )) {
     found.push(clean(match[1]));
   }
 
-  // Common "Daniel ...", "Emma ..."
+  // Pronoun / relationship based supporting characters
+  const relationships = [
+    ["mother", "Mother"],
+    ["father", "Father"],
+    ["grandmother", "Grandmother"],
+    ["grandfather", "Grandfather"],
+    ["sister", "Sister"],
+    ["brother", "Brother"],
+    ["friend", "Friend"],
+    ["teacher", "Teacher"],
+    ["doctor", "Doctor"],
+    ["police officer", "Police Officer"],
+    ["rescuer", "Rescuer"],
+    ["rescue team", "Rescue Team"],
+    ["villagers", "Villagers"]
+  ];
+
+  const fullText = lower(text);
+
+  for (const [word, label] of relationships) {
+    if (fullText.includes(word)) {
+      found.push(label);
+    }
+  }
+
+  // Capitalized names from sentences
   for (const sentence of sentences) {
-    const matches = sentence.match(/\b[A-Z][a-z]{2,}\b/g) || [];
+    const matches =
+      sentence.match(/\b[A-Z][a-z]{2,}\b/g) || [];
 
     for (const name of matches) {
-      const blocked = [
-        "The",
-        "A",
-        "An",
-        "One",
-        "Inside",
-        "By",
-        "As",
-        "When",
-        "He",
-        "She",
-        "They",
-        "This",
-        "That",
-        "In",
-        "At",
-        "On"
-      ];
-
-      if (!blocked.includes(name)) {
+      if (!NON_NAMES.has(name)) {
         found.push(name);
       }
     }
   }
 
-  return unique(found).slice(0, 8);
+  return unique(found).slice(0, 10);
 }
 
 /* =========================================================
-   LOCATION DETECTION
+   LOCATION INTELLIGENCE
 ========================================================= */
 
-const LOCATION_WORDS = [
-  "house",
-  "home",
-  "workshop",
-  "attic",
-  "basement",
-  "forest",
-  "mountain",
-  "mountains",
-  "town",
-  "village",
-  "city",
-  "street",
-  "road",
-  "station",
-  "train station",
-  "harbor",
-  "harbour",
-  "lighthouse",
-  "school",
-  "office",
-  "hospital",
-  "beach",
-  "coast",
-  "coastal",
-  "river",
-  "bridge",
-  "cave",
-  "castle",
-  "room",
-  "garden",
-  "warehouse",
-  "airport",
-  "restaurant",
-  "store",
-  "shop"
+const LOCATION_PATTERNS = [
+  ["train station", "train station"],
+  ["railway station", "railway station"],
+  ["secret room", "secret room"],
+  ["signal room", "signal room"],
+  ["workshop", "workshop"],
+  ["attic", "attic"],
+  ["basement", "basement"],
+  ["house", "house"],
+  ["home", "home"],
+  ["forest", "forest"],
+  ["mountains", "mountains"],
+  ["mountain", "mountain"],
+  ["town", "town"],
+  ["village", "village"],
+  ["city", "city"],
+  ["street", "street"],
+  ["road", "road"],
+  ["harbor", "harbor"],
+  ["harbour", "harbor"],
+  ["lighthouse", "lighthouse"],
+  ["beach", "beach"],
+  ["coast", "coast"],
+  ["river", "river"],
+  ["bridge", "bridge"],
+  ["cave", "cave"],
+  ["castle", "castle"],
+  ["garden", "garden"],
+  ["warehouse", "warehouse"],
+  ["airport", "airport"],
+  ["hospital", "hospital"],
+  ["school", "school"],
+  ["office", "office"],
+  ["restaurant", "restaurant"],
+  ["shop", "shop"],
+  ["store", "store"],
+  ["tree", "under an old tree"]
 ];
 
-function detectLocation(sentence) {
-  const lower = sentence.toLowerCase();
+function detectLocation(sentence, previousLocation = "story location") {
+  const s = lower(sentence);
 
-  for (const location of LOCATION_WORDS) {
-    if (lower.includes(location)) {
-      return location;
+  for (const [pattern, label] of LOCATION_PATTERNS) {
+    if (s.includes(pattern)) {
+      return label;
     }
   }
 
-  return "story location";
+  return previousLocation;
 }
 
 /* =========================================================
@@ -143,34 +184,44 @@ function detectLocation(sentence) {
 ========================================================= */
 
 function detectEventType(sentence) {
-  const s = sentence.toLowerCase();
+  const s = lower(sentence);
 
   if (
-    /discover|finds|find|discovers|reveals|learns|realizes|notices|sees|receives/.test(s)
+    /discover|discovers|find|finds|found|reveals|learns|realizes|notices|sees|receives/.test(
+      s
+    )
   ) {
     return "discovery";
   }
 
   if (
-    /warning|danger|storm|threat|problem|secret|mystery|missing|lost|trapped|dangerous/.test(s)
+    /warning|danger|threat|problem|secret|mystery|lost|trapped|storm|flood|attack|missing/.test(
+      s
+    )
   ) {
     return "conflict";
   }
 
   if (
-    /tries|attempts|follows|searches|runs|travels|goes|takes|climbs|enters|leaves|returns|studies/.test(s)
+    /tries|attempts|follows|studies|searches|runs|travels|goes|takes|climbs|enters|leaves|returns|moves|opens|reads/.test(
+      s
+    )
   ) {
     return "action";
   }
 
   if (
-    /repair|fixes|opens|builds|rescues|saves|contacts|guides|stops|starts|solves/.test(s)
+    /repair|fixes|rescues|saves|contacts|guides|restores|stops|starts|solves|finds the keepsake/.test(
+      s
+    )
   ) {
     return "resolution_action";
   }
 
   if (
-    /thanks|thank|safe|safely|saved|returns home|morning|passes|ends|finally/.test(s)
+    /thanks|thank|safe|safely|saved|returns home|morning|passes|places|brings it home/.test(
+      s
+    )
   ) {
     return "resolution";
   }
@@ -179,20 +230,22 @@ function detectEventType(sentence) {
 }
 
 /* =========================================================
-   IMPORTANCE
+   EVENT IMPORTANCE
 ========================================================= */
 
 function importanceFor(type, sentence) {
-  const s = sentence.toLowerCase();
+  const s = lower(sentence);
 
+  if (type === "conflict") return 5;
   if (type === "resolution_action") return 5;
   if (type === "resolution") return 5;
-  if (type === "conflict") return 5;
   if (type === "discovery") return 4;
   if (type === "action") return 3;
 
   if (
-    /secret|valuable|danger|rescue|save|lost|trapped|storm|hidden|mysterious/.test(s)
+    /secret|valuable|danger|rescue|save|lost|trapped|storm|flood|hidden|mysterious|heirloom|keepsake|map/.test(
+      s
+    )
   ) {
     return 5;
   }
@@ -205,7 +258,16 @@ function importanceFor(type, sentence) {
 ========================================================= */
 
 function extractEvents(sentences) {
+  let previousLocation = "story location";
+
   return sentences.map((sentence, index) => {
+    const location = detectLocation(
+      sentence,
+      previousLocation
+    );
+
+    previousLocation = location;
+
     const type = detectEventType(sentence);
 
     return {
@@ -214,30 +276,28 @@ function extractEvents(sentences) {
       text: sentence,
       type,
       importance: importanceFor(type, sentence),
-      location: detectLocation(sentence)
+      location
     };
   });
 }
 
 /* =========================================================
-   EVENT GROUPING
-   IMPORTANT:
-   Every group is ALWAYS an ARRAY.
+   GROUPING
 ========================================================= */
 
 function canMerge(a, b) {
   if (!a || !b) return false;
 
-  // Never merge major conflict/resolution events together.
+  // Important events should stand on their own.
   if (a.importance >= 5 || b.importance >= 5) {
     return false;
   }
 
-  // Don't merge different locations.
+  // Avoid combining major location changes.
   if (
+    a.location !== b.location &&
     a.location !== "story location" &&
-    b.location !== "story location" &&
-    a.location !== b.location
+    b.location !== "story location"
   ) {
     return false;
   }
@@ -252,7 +312,6 @@ function groupEvents(events) {
     const previous = groups[groups.length - 1];
 
     if (
-      previous &&
       Array.isArray(previous) &&
       previous.length < 2 &&
       canMerge(previous[previous.length - 1], event)
@@ -264,19 +323,18 @@ function groupEvents(events) {
   }
 
   return groups.filter(
-    (group) => Array.isArray(group) && group.length > 0
+    (group) => Array.isArray(group) && group.length
   );
 }
 
 /* =========================================================
    SCENE DISTRIBUTION
-   Guaranteed arrays.
 ========================================================= */
 
 function distributeGroups(groups, sceneCount) {
   const safeGroups = Array.isArray(groups)
     ? groups.filter(
-        (group) => Array.isArray(group) && group.length > 0
+        (g) => Array.isArray(g) && g.length
       )
     : [];
 
@@ -285,118 +343,99 @@ function distributeGroups(groups, sceneCount) {
     () => []
   );
 
-  if (safeGroups.length === 0) {
+  if (!safeGroups.length) {
     return scenes;
   }
 
   /*
-    Keep chronological order.
-    Spread groups across scenes.
+    Sequential allocation.
+    Never changes event order.
   */
 
-  const total = safeGroups.length;
+  const base =
+    Math.floor(safeGroups.length / sceneCount);
 
-  safeGroups.forEach((group, index) => {
-    let sceneIndex = Math.floor(
-      (index * sceneCount) / total
-    );
+  let remainder =
+    safeGroups.length % sceneCount;
 
-    if (sceneIndex >= sceneCount) {
-      sceneIndex = sceneCount - 1;
-    }
-
-    scenes[sceneIndex].push(group);
-  });
-
-  /*
-    If a scene is empty, move one group from the
-    nearest scene that has more than one group.
-  */
+  let cursor = 0;
 
   for (let i = 0; i < sceneCount; i++) {
-    if (scenes[i].length > 0) continue;
+    let amount = base;
 
-    let donor = -1;
-
-    for (let j = 0; j < sceneCount; j++) {
-      if (scenes[j].length > 1) {
-        donor = j;
-        break;
-      }
+    if (remainder > 0) {
+      amount++;
+      remainder--;
     }
 
-    if (donor !== -1) {
-      const moved = scenes[donor].pop();
+    // Maximum three cinematic beats per scene.
+    amount = Math.min(amount, 3);
 
-      if (i < donor) {
-        scenes[i].push(moved);
-      } else {
-        scenes[i].unshift(moved);
+    for (let j = 0; j < amount; j++) {
+      if (cursor < safeGroups.length) {
+        scenes[i].push(safeGroups[cursor]);
+        cursor++;
       }
     }
+  }
+
+  // If anything remains, append sequentially.
+  while (cursor < safeGroups.length) {
+    let target = scenes.findIndex(
+      (scene) => scene.length < 3
+    );
+
+    if (target === -1) {
+      target = sceneCount - 1;
+    }
+
+    scenes[target].push(
+      safeGroups[cursor]
+    );
+
+    cursor++;
   }
 
   return scenes;
 }
 
 /* =========================================================
-   BEAT TIMING
-   ALWAYS ENDS AT 10
+   TIMING
 ========================================================= */
 
 function beatTimes(count) {
-  const safeCount = Math.max(
+  const n = Math.max(
     1,
     Math.min(3, Number(count) || 1)
   );
 
-  if (safeCount === 1) {
-    return [
-      {
-        start: 0,
-        end: 10
-      }
-    ];
+  if (n === 1) {
+    return [{ start: 0, end: 10 }];
   }
 
-  if (safeCount === 2) {
+  if (n === 2) {
     return [
-      {
-        start: 0,
-        end: 5
-      },
-      {
-        start: 5,
-        end: 10
-      }
+      { start: 0, end: 5 },
+      { start: 5, end: 10 }
     ];
   }
 
   return [
-    {
-      start: 0,
-      end: 3
-    },
-    {
-      start: 3,
-      end: 7
-    },
-    {
-      start: 7,
-      end: 10
-    }
+    { start: 0, end: 3 },
+    { start: 3, end: 7 },
+    { start: 7, end: 10 }
   ];
 }
 
 /* =========================================================
-   TEXT HELPERS
+   GROUP HELPERS
 ========================================================= */
 
 function groupText(group) {
   if (!Array.isArray(group)) return "";
 
   return group
-    .map((event) => event?.text || "")
+    .map((e) => e?.text || "")
     .filter(Boolean)
     .join(" ");
 }
@@ -405,7 +444,9 @@ function groupTypes(group) {
   if (!Array.isArray(group)) return [];
 
   return unique(
-    group.map((event) => event?.type)
+    group
+      .map((e) => e?.type)
+      .filter(Boolean)
   );
 }
 
@@ -414,61 +455,96 @@ function groupLocation(group) {
     return "story location";
   }
 
-  const locations = group
-    .map((event) => event?.location)
-    .filter(Boolean);
-
-  return locations[0] || "story location";
+  return (
+    group.find(
+      (e) =>
+        e?.location &&
+        e.location !== "story location"
+    )?.location ||
+    "story location"
+  );
 }
 
 /* =========================================================
    DIALOGUE
 ========================================================= */
 
-function dialogueFor(group, characters) {
-  const text = groupText(group).toLowerCase();
-  const types = groupTypes(group);
+function mainCharacter(characters) {
+  return (
+    (Array.isArray(characters)
+      ? characters.find(
+          (c) =>
+            ![
+              "Mother",
+              "Father",
+              "Grandmother",
+              "Grandfather",
+              "Sister",
+              "Brother",
+              "Friend",
+              "Teacher",
+              "Doctor",
+              "Police Officer",
+              "Rescuer",
+              "Rescue Team",
+              "Villagers"
+            ].includes(c)
+        )
+      : null) ||
+    "Main character"
+  );
+}
 
-  const mainCharacter =
-    Array.isArray(characters) && characters.length
-      ? characters[0]
-      : "The main character";
+function dialogueFor(group, characters, sceneNumber) {
+  const text = lower(groupText(group));
+  const types = groupTypes(group);
+  const hero = mainCharacter(characters);
 
   if (
     types.includes("conflict") &&
-    /warning|storm|danger|threat|lost|trapped|problem/.test(text)
+    /danger|storm|threat|lost|trapped|problem|secret/.test(text)
   ) {
     return [
       {
-        speaker: mainCharacter,
+        speaker: hero,
         text: "Something is wrong. We need to act now."
       }
     ];
   }
 
-  if (types.includes("discovery")) {
+  if (
+    types.includes("discovery") &&
+    /discover|find|finds|discovers|hidden|mysterious/.test(text)
+  ) {
     return [
       {
-        speaker: mainCharacter,
+        speaker: hero,
         text: "What is this? I have to find out."
       }
     ];
   }
 
-  if (types.includes("resolution_action")) {
+  if (
+    types.includes("resolution_action")
+  ) {
     return [
       {
-        speaker: mainCharacter,
-        text: "Come on. We can do this."
+        speaker: hero,
+        text: "This has to be the answer."
       }
     ];
   }
 
-  if (types.includes("resolution")) {
+  if (
+    types.includes("resolution") &&
+    /thanks|thank|saved|safe|keepsake|photograph|home/.test(
+      text
+    )
+  ) {
     return [
       {
-        speaker: "Supporting character",
-        text: "You did it. Thank you."
+        speaker: hero,
+        text: "I finally understand what happened."
       }
     ];
   }
@@ -484,12 +560,26 @@ function voiceoverFor(group) {
   const text = clean(groupText(group));
 
   if (!text) {
-    return "The story continues.";
+    return "";
   }
 
-  return text.length > 180
-    ? `${text.slice(0, 177)}...`
-    : text;
+  // Never cut words.
+  if (text.length <= 180) {
+    return text;
+  }
+
+  const words = text.split(" ");
+  let result = "";
+
+  for (const word of words) {
+    if ((result + " " + word).trim().length > 180) {
+      break;
+    }
+
+    result = (result + " " + word).trim();
+  }
+
+  return result;
 }
 
 /* =========================================================
@@ -500,22 +590,22 @@ function cameraFor(group) {
   const types = groupTypes(group);
 
   if (types.includes("conflict")) {
-    return "Medium close-up with a slow push-in, emphasizing tension.";
+    return "Slow push-in and medium close-up to emphasize tension.";
   }
 
   if (types.includes("discovery")) {
-    return "Close-up on the discovery followed by a reaction shot.";
+    return "Close-up on the important discovery followed by a reaction shot.";
   }
 
   if (types.includes("resolution_action")) {
-    return "Dynamic tracking shot following the main action.";
+    return "Dynamic tracking shot following the character through the action.";
   }
 
   if (types.includes("resolution")) {
-    return "Wide cinematic shot followed by a warm close-up.";
+    return "Warm wide shot followed by a gentle emotional close-up.";
   }
 
-  return "Cinematic medium shot with a gentle camera movement.";
+  return "Cinematic medium shot with subtle natural camera movement.";
 }
 
 /* =========================================================
@@ -524,39 +614,40 @@ function cameraFor(group) {
 
 function lightingFor(group) {
   const types = groupTypes(group);
+  const text = lower(groupText(group));
 
-  if (types.includes("conflict")) {
-    return "Dramatic directional lighting with stronger shadows.";
+  if (/rain|storm|night|dark/.test(text)) {
+    return "Moody low-key lighting with realistic shadows and atmospheric highlights.";
   }
 
-  if (types.includes("discovery")) {
-    return "Moody cinematic lighting with focused highlights.";
+  if (types.includes("conflict")) {
+    return "Dramatic directional lighting with deeper shadows.";
   }
 
   if (types.includes("resolution")) {
-    return "Warm natural light suggesting relief and closure.";
+    return "Warm natural lighting suggesting relief and emotional closure.";
   }
 
-  return "Natural cinematic lighting appropriate to the location.";
+  return "Natural cinematic lighting appropriate to the environment.";
 }
 
 /* =========================================================
-   CHARACTER LOCK
+   CONTINUITY
 ========================================================= */
 
 function characterLock(characters) {
-  const safeCharacters = Array.isArray(characters)
+  const safe = Array.isArray(characters)
     ? characters
     : [];
 
-  if (!safeCharacters.length) {
-    return "Maintain consistent appearance for all recurring characters.";
+  if (!safe.length) {
+    return "Keep all recurring characters visually consistent across every scene.";
   }
 
   return (
     "Character continuity lock: " +
-    safeCharacters.join(", ") +
-    ". Maintain the same face, age, hairstyle, body type, clothing, and overall appearance in every scene."
+    safe.join(", ") +
+    ". Keep consistent faces, ages, hairstyles, body types, clothing, and physical appearance throughout the entire story."
   );
 }
 
@@ -564,118 +655,158 @@ function characterLock(characters) {
    VISUAL PROMPT
 ========================================================= */
 
-function createVisualPrompt(group, characters) {
+function createVisualPrompt(
+  group,
+  characters
+) {
   const location = groupLocation(group);
-  const text = groupText(group);
+  const action = groupText(group);
 
-  const characterPart =
-    Array.isArray(characters) && characters.length
-      ? `Main characters: ${characters.join(", ")}.`
-      : "Maintain consistent main characters.";
+  const chars =
+    Array.isArray(characters) &&
+    characters.length
+      ? characters.join(", ")
+      : "recurring characters";
 
-  return [
-    "Cinematic realistic storytelling.",
-    `Location: ${location}.`,
-    characterPart,
-    `Action: ${text}.`,
-    "Natural movement, consistent environment, detailed cinematic composition, realistic textures."
-  ].join(" ");
+  return (
+    "Cinematic realistic storytelling. " +
+    `Location: ${location}. ` +
+    `Characters: ${chars}. ` +
+    `Action: ${action}. ` +
+    "Maintain exact character continuity, realistic environment, natural movement, detailed textures, cinematic composition."
+  );
 }
 
 /* =========================================================
-   SCENE CREATION
+   SCENE CREATOR
 ========================================================= */
 
-function createScene(sceneGroups, sceneNumber, characters) {
-  const safeGroups = Array.isArray(sceneGroups)
-    ? sceneGroups
-        .filter(
-          (group) =>
-            Array.isArray(group) &&
-            group.length > 0
-        )
-        .slice(0, 3)
+function createScene(
+  sceneGroups,
+  sceneNumber,
+  characters
+) {
+  let safeGroups = Array.isArray(sceneGroups)
+    ? sceneGroups.filter(
+        (g) =>
+          Array.isArray(g) &&
+          g.length > 0
+      )
     : [];
 
-  /*
-    Never create zero beats.
-  */
-
-  if (safeGroups.length === 0) {
-    safeGroups.push([
-      {
-        id: "TRANSITION",
-        text: "A brief cinematic transition maintains story continuity.",
-        type: "narrative",
-        importance: 1,
-        location: "story location"
-      }
-    ]);
+  if (!safeGroups.length) {
+    safeGroups = [
+      [
+        {
+          id: `T${sceneNumber}`,
+          text: "A brief cinematic transition maintains continuity.",
+          type: "narrative",
+          importance: 1,
+          location: "story location"
+        }
+      ]
+    ];
   }
 
-  const times = beatTimes(safeGroups.length);
+  safeGroups = safeGroups.slice(0, 3);
 
-  const beats = safeGroups.map((group, index) => {
-    const time = times[index];
+  const times = beatTimes(
+    safeGroups.length
+  );
 
-    return {
+  const beats = safeGroups.map(
+    (group, index) => ({
       beat_number: index + 1,
-      start_time: time.start,
-      end_time: time.end,
-      event_ids: Array.isArray(group)
-        ? group.map((event) => event.id)
-        : [],
+      start_time: times[index].start,
+      end_time: times[index].end,
+      event_ids: group.map(
+        (event) => event.id
+      ),
       action: groupText(group),
-      visual_prompt: createVisualPrompt(
-        group,
-        characters
+      visual_prompt:
+        createVisualPrompt(
+          group,
+          characters
+        )
+    })
+  );
+
+  const events = safeGroups.flatMap(
+    (group) =>
+      Array.isArray(group)
+        ? group
+        : []
+  );
+
+  const dialogue = [];
+
+  for (let i = 0; i < safeGroups.length; i++) {
+    dialogue.push(
+      ...dialogueFor(
+        safeGroups[i],
+        characters,
+        sceneNumber
       )
-    };
-  });
+    );
+  }
 
-  const allEvents = safeGroups.flatMap((group) =>
-    Array.isArray(group) ? group : []
-  );
+  // Remove duplicate exact dialogue.
+  const seenDialogue = new Set();
 
-  const dialogue = safeGroups.flatMap((group) =>
-    dialogueFor(group, characters)
-  );
+  const finalDialogue =
+    dialogue.filter((d) => {
+      const key =
+        `${d.speaker}|${d.text}`;
+
+      if (seenDialogue.has(key)) {
+        return false;
+      }
+
+      seenDialogue.add(key);
+      return true;
+    });
 
   const voiceover = safeGroups
     .map(voiceoverFor)
     .filter(Boolean)
     .join(" ");
 
-  const location =
-    allEvents[0]?.location || "story location";
-
-  const visualPrompt = createVisualPrompt(
-    safeGroups[0],
-    characters
-  );
-
   return {
     scene_number: sceneNumber,
-    start_time: (sceneNumber - 1) * 10,
-    end_time: sceneNumber * 10,
 
-    location,
+    start_time:
+      (sceneNumber - 1) * 10,
 
-    visual_prompt: visualPrompt,
+    end_time:
+      sceneNumber * 10,
 
-    camera: cameraFor(safeGroups[0]),
-    lighting: lightingFor(safeGroups[0]),
+    location:
+      events[0]?.location ||
+      "story location",
 
-    action: allEvents
-      .map((event) => event?.text || "")
+    visual_prompt:
+      createVisualPrompt(
+        safeGroups[0],
+        characters
+      ),
+
+    camera:
+      cameraFor(safeGroups[0]),
+
+    lighting:
+      lightingFor(safeGroups[0]),
+
+    action: events
+      .map((e) => e?.text || "")
       .filter(Boolean)
       .join(" "),
 
-    dialogue,
+    dialogue: finalDialogue,
 
     voiceover,
 
-    continuity: characterLock(characters),
+    continuity:
+      characterLock(characters),
 
     beats
   };
@@ -685,9 +816,15 @@ function createScene(sceneGroups, sceneNumber, characters) {
    VALIDATION
 ========================================================= */
 
-function validateScenes(scenes, events, sceneCount) {
+function validateScenes(
+  scenes,
+  events,
+  sceneCount
+) {
   if (!Array.isArray(scenes)) {
-    throw new Error("Scenes are not an array.");
+    throw new Error(
+      "Scenes are not an array."
+    );
   }
 
   if (scenes.length !== sceneCount) {
@@ -696,115 +833,130 @@ function validateScenes(scenes, events, sceneCount) {
     );
   }
 
-  const expectedIds = Array.isArray(events)
-    ? events.map((event) => event.id)
-    : [];
+  const expected =
+    events.map((e) => e.id);
 
-  const actualIds = [];
+  const actual = [];
 
-  scenes.forEach((scene, index) => {
-    const expectedStart = index * 10;
-    const expectedEnd = (index + 1) * 10;
+  scenes.forEach(
+    (scene, sceneIndex) => {
+      const expectedStart =
+        sceneIndex * 10;
 
-    if (scene.start_time !== expectedStart) {
-      throw new Error(
-        `Scene ${index + 1} must start at ${expectedStart} seconds.`
-      );
-    }
+      const expectedEnd =
+        (sceneIndex + 1) * 10;
 
-    if (scene.end_time !== expectedEnd) {
-      throw new Error(
-        `Scene ${index + 1} must end at ${expectedEnd} seconds.`
-      );
-    }
-
-    if (!Array.isArray(scene.beats)) {
-      throw new Error(
-        `Scene ${index + 1} beats are invalid.`
-      );
-    }
-
-    if (scene.beats.length < 1 || scene.beats.length > 3) {
-      throw new Error(
-        `Scene ${index + 1} must contain 1 to 3 beats.`
-      );
-    }
-
-    scene.beats.forEach((beat, beatIndex) => {
       if (
-        typeof beat.start_time !== "number" ||
-        typeof beat.end_time !== "number"
+        scene.start_time !==
+        expectedStart
       ) {
         throw new Error(
-          `Scene ${index + 1} beat ${beatIndex + 1} has invalid timing.`
-        );
-      }
-
-      if (beatIndex === 0 && beat.start_time !== 0) {
-        throw new Error(
-          `Scene ${index + 1} does not start at 0 seconds.`
+          `Scene ${sceneIndex + 1} start time invalid.`
         );
       }
 
       if (
-        beatIndex > 0 &&
-        beat.start_time !==
-          scene.beats[beatIndex - 1].end_time
+        scene.end_time !==
+        expectedEnd
       ) {
         throw new Error(
-          `Scene ${index + 1} has a timing gap.`
+          `Scene ${sceneIndex + 1} does not end at 10 seconds.`
         );
       }
-    });
 
-    const lastBeat =
-      scene.beats[scene.beats.length - 1];
+      if (
+        !Array.isArray(scene.beats) ||
+        scene.beats.length < 1 ||
+        scene.beats.length > 3
+      ) {
+        throw new Error(
+          `Scene ${sceneIndex + 1} beat structure invalid.`
+        );
+      }
 
-    if (lastBeat.end_time !== 10) {
-      throw new Error(
-        `Scene ${index + 1} does not end at 10 seconds.`
+      scene.beats.forEach(
+        (beat, beatIndex) => {
+          if (
+            beatIndex === 0 &&
+            beat.start_time !== 0
+          ) {
+            throw new Error(
+              `Scene ${sceneIndex + 1} does not start at 0.`
+            );
+          }
+
+          if (
+            beatIndex > 0 &&
+            beat.start_time !==
+              scene.beats[
+                beatIndex - 1
+              ].end_time
+          ) {
+            throw new Error(
+              `Scene ${sceneIndex + 1} contains a timing gap.`
+            );
+          }
+
+          if (
+            !Array.isArray(
+              beat.event_ids
+            )
+          ) {
+            throw new Error(
+              `Scene ${sceneIndex + 1} event IDs invalid.`
+            );
+          }
+
+          actual.push(
+            ...beat.event_ids.filter(
+              (id) =>
+                /^E\d+$/.test(id)
+            )
+          );
+        }
       );
-    }
 
-    if (!Array.isArray(scene.dialogue)) {
-      throw new Error(
-        `Scene ${index + 1} dialogue is invalid.`
-      );
-    }
+      const last =
+        scene.beats[
+          scene.beats.length - 1
+        ];
 
-    for (const id of scene.beats.flatMap(
-      (beat) =>
-        Array.isArray(beat.event_ids)
-          ? beat.event_ids
-          : []
-    )) {
-      if (id !== "TRANSITION") {
-        actualIds.push(id);
+      if (last.end_time !== 10) {
+        throw new Error(
+          `Scene ${sceneIndex + 1} does not end at 10 seconds.`
+        );
+      }
+
+      if (
+        !Array.isArray(scene.dialogue)
+      ) {
+        throw new Error(
+          `Scene ${sceneIndex + 1} dialogue invalid.`
+        );
       }
     }
-  });
+  );
 
-  /*
-    Only compare real events when events exist.
-  */
+  if (
+    actual.length !==
+    expected.length
+  ) {
+    throw new Error(
+      `Event coverage mismatch. Expected ${expected.length}, got ${actual.length}.`
+    );
+  }
 
-  const expectedReal = expectedIds;
-
-  if (expectedReal.length > 0) {
+  for (
+    let i = 0;
+    i < expected.length;
+    i++
+  ) {
     if (
-      actualIds.length !== expectedReal.length
+      actual[i] !== expected[i]
     ) {
       throw new Error(
-        `Event coverage mismatch. Expected ${expectedReal.length}, got ${actualIds.length}.`
+        `Event order mismatch at event ${i + 1}.`
       );
-    }
-
-    for (let i = 0; i < expectedReal.length; i++) {
-      if (actualIds[i] !== expectedReal[i]) {
-        throw new Error(
-          `Event order mismatch at position ${i + 1}.`
-        );
-      }
     }
   }
 
@@ -812,7 +964,7 @@ function validateScenes(scenes, events, sceneCount) {
 }
 
 /* =========================================================
-   PROJECT GENERATOR
+   PROJECT GENERATION
 ========================================================= */
 
 function generateProject(
@@ -820,61 +972,68 @@ function generateProject(
   duration,
   aspectRatio
 ) {
-  const safePrompt = clean(prompt);
+  const safePrompt =
+    clean(prompt);
 
   if (!safePrompt) {
-    throw new Error("Story prompt is empty.");
+    throw new Error(
+      "Video prompt is empty."
+    );
   }
 
   const safeDuration =
-    Number(duration) > 0
-      ? Number(duration)
-      : 60;
-
-  /*
-    V37 testing limit.
-    We can expand this later.
-  */
+    Number(duration) || 60;
 
   if (safeDuration > 60) {
     throw new Error(
-      "V37 testing mode currently supports up to 60 seconds."
+      "V38 testing mode supports up to 60 seconds."
     );
   }
 
   const sceneCount =
-    Math.max(1, Math.floor(safeDuration / 10));
+    Math.max(
+      1,
+      Math.floor(
+        safeDuration / 10
+      )
+    );
 
-  const sentences = splitStory(safePrompt);
+  const sentences =
+    splitStory(safePrompt);
 
   if (!sentences.length) {
     throw new Error(
-      "Could not detect story events."
+      "No story events detected."
     );
   }
 
-  const characters = extractCharacters(
-    safePrompt,
-    sentences
-  );
+  const characters =
+    extractCharacters(
+      safePrompt,
+      sentences
+    );
 
-  const events = extractEvents(sentences);
+  const events =
+    extractEvents(sentences);
 
-  const groups = groupEvents(events);
+  const groups =
+    groupEvents(events);
 
-  const distributed = distributeGroups(
-    groups,
-    sceneCount
-  );
+  const sceneGroups =
+    distributeGroups(
+      groups,
+      sceneCount
+    );
 
-  const scenes = distributed.map(
-    (sceneGroups, index) =>
-      createScene(
-        sceneGroups,
-        index + 1,
-        characters
-      )
-  );
+  const scenes =
+    sceneGroups.map(
+      (groupsForScene, index) =>
+        createScene(
+          groupsForScene,
+          index + 1,
+          characters
+        )
+    );
 
   validateScenes(
     scenes,
@@ -886,18 +1045,17 @@ function generateProject(
     status: "success",
     app: "SANAPTAI",
     engine: ENGINE_VERSION,
-
     duration: safeDuration,
     total_scenes: sceneCount,
-    aspect_ratio: aspectRatio || "16:9",
-
+    aspect_ratio:
+      aspectRatio || "16:9",
     characters,
     scenes
   };
 }
 
 /* =========================================================
-   API TEST
+   API
 ========================================================= */
 
 app.get("/api/test", (req, res) => {
@@ -906,43 +1064,49 @@ app.get("/api/test", (req, res) => {
     app: "SANAPTAI",
     engine: ENGINE_VERSION,
     message:
-      "SANAPTAI V37 Universal Story Engine is running.",
+      "SANAPTAI V38 Story Intelligence Engine is running.",
     gemini: "disabled",
     video_generation: "disabled"
   });
 });
 
-/* =========================================================
-   PROJECT API
-========================================================= */
+app.post(
+  "/api/demo-project",
+  (req, res) => {
+    try {
+      const {
+        prompt,
+        duration,
+        aspectRatio
+      } = req.body || {};
 
-app.post("/api/demo-project", (req, res) => {
-  try {
-    const {
-      prompt,
-      duration,
-      aspectRatio
-    } = req.body || {};
+      const project =
+        generateProject(
+          prompt,
+          duration,
+          aspectRatio
+        );
 
-    const project = generateProject(
-      prompt,
-      duration,
-      aspectRatio
-    );
+      res.json(project);
+    } catch (error) {
+      console.error(
+        "V38 ERROR:",
+        error
+      );
 
-    res.json(project);
-  } catch (error) {
-    console.error("V37 ERROR:", error);
-
-    res.status(500).json({
-      status: "error",
-      app: "SANAPTAI",
-      engine: ENGINE_VERSION,
-      message: "Project creation failed.",
-      error: error.message
-    });
+      res.status(500).json({
+        status: "error",
+        app: "SANAPTAI",
+        engine: ENGINE_VERSION,
+        message:
+          "Project creation failed.",
+        error:
+          error?.message ||
+          "Unknown error"
+      });
+    }
   }
-});
+);
 
 /* =========================================================
    ROOT
@@ -950,7 +1114,8 @@ app.post("/api/demo-project", (req, res) => {
 
 app.get("/", (req, res) => {
   res.sendFile(
-    process.cwd() + "/public/index.html"
+    process.cwd() +
+      "/public/index.html"
   );
 });
 
@@ -958,8 +1123,11 @@ app.get("/", (req, res) => {
    START
 ========================================================= */
 
-app.listen(PORT, () => {
-  console.log(
-    `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
-  );
-});
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
+    );
+  }
+);
