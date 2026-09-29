@@ -740,7 +740,7 @@ app.post("/api/demo-project", (req, res) => {
     return res.json(project);
   } catch (error) {
     console.error("V36 ERROR:", error);
-
+console.error("V36 STACK:", error.stack);
     return res.status(400).json({
       status: "error",
       engine: ENGINE_VERSION,
