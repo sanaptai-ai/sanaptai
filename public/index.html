@@ -312,7 +312,20 @@ async function generateVideo() {
         "\n\n" +
 
         "🗣️ Dialogue:\n" +
-        (scene.dialogue || "No dialogue") +
+        (
+  Array.isArray(scene.dialogue)
+    ? scene.dialogue
+        .map((d) => {
+          if (typeof d === "string") return d;
+          if (d && typeof d === "object") {
+            return `${d.speaker ? d.speaker + ": " : ""}${d.text || ""}`;
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join(" ")
+    : scene.dialogue || "No dialogue"
+) +
         "\n\n" +
 
         "🎙️ Voiceover:\n" +
