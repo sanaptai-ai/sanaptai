@@ -12,17 +12,14 @@ const __dirname = path.dirname(__filename);
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
-
 app.use(express.static(path.join(__dirname, "public")));
 
-const ENGINE_VERSION = "V19";
+const ENGINE_VERSION = "V20";
 const DEMO_MODE = true;
 const GEMINI_ENABLED = false;
 
 function cleanText(value) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function unique(items) {
@@ -34,12 +31,8 @@ function sceneTimes(sceneNumber) {
   const end = start + 10;
 
   return {
-    start_time: `${Math.floor(start / 60)
-      .toString()
-      .padStart(2, "0")}:${(start % 60).toString().padStart(2, "0")}`,
-    end_time: `${Math.floor(end / 60)
-      .toString()
-      .padStart(2, "0")}:${(end % 60).toString().padStart(2, "0")}`
+    start_time: `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`,
+    end_time: `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`
   };
 }
 
@@ -60,12 +53,18 @@ const CHARACTER_LOCKS = {
   RescueCrew:
     "Professional rescue crew wearing weatherproof rescue clothing.",
 
-  Main:
-    "Main character with consistent face, age, body proportions, hairstyle, clothing, and appearance across every scene."
+  "Delivery Driver":
+    "Young delivery driver with consistent face, age, hairstyle, clothing, and body proportions.",
+
+  Hiker:
+    "Injured adult hiker with consistent face, age, hairstyle, clothing, and body proportions.",
+
+  "Main Character":
+    "Main character with consistent face, age, hairstyle, clothing, body proportions, and appearance throughout the entire video."
 };
 
 /* =========================================================
-   NOAH CORE STORY
+   NOAH CORE EVENTS
 ========================================================= */
 
 function createNoahCoreEvents() {
@@ -463,12 +462,10 @@ function createNoahCoreEvents() {
 }
 
 /* =========================================================
-   CINEMATIC SUB-BEATS
+   SUB-BEATS
 ========================================================= */
 
 function createSubBeats(event) {
-  const a = event.action;
-
   const map = {
     E01: [
       "Noah and his father walk together through the quiet coastal streets.",
@@ -621,173 +618,123 @@ function createSubBeats(event) {
     ]
   };
 
-  return map[event.id] || [a, a];
+  return map[event.id] || [event.action, event.action];
 }
 
 /* =========================================================
-   CAMERA ENGINE V19
-   IMPORTANT:
-   CAMERA IS NOW EVENT-TYPE FIRST.
+   EVENT-AWARE CAMERA
 ========================================================= */
 
 function cameraForScene(event, beatIndex = 0) {
-  const type = event.type;
+  switch (event.type) {
+    case "setup":
+      return beatIndex === 0
+        ? "Wide cinematic establishing shot showing the full environment and characters."
+        : "Medium cinematic shot focused on the characters and their interaction.";
 
-  if (type === "setup") {
-    return beatIndex === 0
-      ? "Wide cinematic establishing shot showing the full environment and characters."
-      : "Medium cinematic shot focused on the characters and their interaction.";
+    case "discovery":
+    case "warning":
+      return beatIndex === 0
+        ? "Cinematic close-up focused on the important object or discovery."
+        : "Over-the-shoulder close-up showing the character examining the important object.";
+
+    case "realization":
+      return "Cinematic medium close-up focused on the character's realization and reaction.";
+
+    case "decision":
+      return "Cinematic medium shot showing the character making a determined decision.";
+
+    case "conflict":
+      return beatIndex === 0
+        ? "Cinematic two-shot showing both sides of the conversation and conflict."
+        : "Wide reaction shot showing the characters' disagreement within the environment.";
+
+    case "movement":
+      return "Smooth cinematic tracking shot following the character's movement.";
+
+    case "action":
+      return beatIndex === 0
+        ? "Detailed cinematic close-up showing the character performing the task."
+        : "Medium environmental shot showing the character actively completing the task.";
+
+    case "climax":
+      return beatIndex === 0
+        ? "Dynamic cinematic tracking shot emphasizing the intensity of the moment."
+        : "Wide dramatic shot showing the full scale of the dangerous situation.";
+
+    case "rescue":
+      return beatIndex === 0
+        ? "Long-lens cinematic shot tracking the rescue boat through the storm."
+        : "Wide cinematic harbor shot showing the rescue boat following the lighthouse signal.";
+
+    case "resolution":
+      return beatIndex === 0
+        ? "Wide peaceful cinematic shot showing the safe environment after the danger."
+        : "Wide emotional closing shot showing the characters together in the peaceful environment.";
+
+    default:
+      return "Cinematic medium shot clearly showing the exact stated story action.";
   }
-
-  if (type === "discovery" || type === "warning") {
-    return beatIndex === 0
-      ? "Cinematic close-up focused on the important object or discovery."
-      : "Over-the-shoulder close-up showing the character examining the important object.";
-  }
-
-  if (type === "realization") {
-    return "Cinematic medium close-up focused on the character's realization and reaction.";
-  }
-
-  if (type === "decision") {
-    return "Cinematic medium shot showing the character making a determined decision.";
-  }
-
-  if (type === "conflict") {
-    return beatIndex === 0
-      ? "Cinematic two-shot showing both sides of the conversation and conflict."
-      : "Wide reaction shot showing the characters' disagreement within the environment.";
-  }
-
-  if (type === "movement") {
-    return "Smooth cinematic tracking shot following the character's movement.";
-  }
-
-  if (type === "action") {
-    return beatIndex === 0
-      ? "Detailed cinematic close-up showing the character performing the task."
-      : "Medium environmental shot showing the character actively completing the task.";
-  }
-
-  if (type === "climax") {
-    return beatIndex === 0
-      ? "Dynamic cinematic tracking shot emphasizing the intensity of the moment."
-      : "Wide dramatic shot showing the full scale of the dangerous situation.";
-  }
-
-  if (type === "rescue") {
-    return beatIndex === 0
-      ? "Long-lens cinematic shot tracking the rescue boat through the storm."
-      : "Wide cinematic harbor shot showing the rescue boat following the lighthouse signal.";
-  }
-
-  if (type === "resolution") {
-    return beatIndex === 0
-      ? "Wide peaceful cinematic shot showing the safe town after the storm."
-      : "Wide emotional closing shot showing the characters together in the peaceful town.";
-  }
-
-  return "Cinematic medium shot clearly showing the stated story action.";
 }
 
 /* =========================================================
-   LIGHTING ENGINE V19
+   EVENT-AWARE LIGHTING
+   IMPORTANT V20 FIX:
+   LIGHTING IS BASED ON EVENT, NOT SCENE NUMBER.
 ========================================================= */
 
-function lightingForScene(event, sceneNumber) {
-  const type = event.type;
+function lightingForScene(event) {
+  switch (event.type) {
+    case "setup":
+      if (event.location === "Father's Workshop") {
+        return "Warm natural morning light through workshop windows, calm weather, soft realistic shadows.";
+      }
 
-  if (sceneNumber <= 11) {
-    if (event.location === "Father's Workshop") {
-      return "Warm natural morning light through workshop windows, calm weather, soft realistic shadows.";
-    }
+      return "Clear peaceful daytime lighting, natural coastal sunlight, calm sky, realistic soft shadows.";
 
-    return "Clear peaceful daytime lighting, natural coastal sunlight, calm sky, realistic soft shadows.";
+    case "discovery":
+    case "warning":
+    case "realization":
+    case "decision":
+      if (event.location === "Father's Workshop") {
+        return "Warm natural morning workshop light, calm weather, soft realistic shadows.";
+      }
+
+      if (event.id === "E15" || event.id === "E20") {
+        return "Heavy storm lighting with dark overcast sky, strong rain, dramatic cool tones, practical lighthouse illumination.";
+      }
+
+      return "Clear daytime lighting appropriate to the current story moment, realistic natural shadows.";
+
+    case "conflict":
+      return "Clear daytime coastal lighting with natural sunlight and realistic soft shadows. The storm has not yet begun.";
+
+    case "movement":
+      if (event.id === "E18") {
+        return "Active storm lighting with dark overcast sky, heavy rain, strong wind, and practical lighthouse illumination.";
+      }
+
+      return "Clear natural daytime lighting with realistic environmental shadows.";
+
+    case "action":
+      return "Heavy storm lighting with dark overcast sky, strong rain, dramatic cool tones, and practical lighthouse illumination.";
+
+    case "climax":
+      return "Dramatic active-storm lighting with dark overcast sky, heavy rain, strong wind, cool tones, and realistic practical light sources.";
+
+    case "rescue":
+      return "Active storm lighting over the coastal harbor, dark clouds, rain, cool dramatic tones, visible lighthouse beam, realistic ocean reflections.";
+
+    case "resolution":
+      return "Peaceful clear morning after the storm, soft golden sunlight, wet reflective surfaces, calm blue sky.";
+
+    default:
+      return "Natural cinematic lighting appropriate to the current story moment.";
   }
-
-  if (sceneNumber === 12) {
-    return "Darkening storm-cloud lighting, cool overcast atmosphere, natural daylight fading.";
-  }
-
-  if (sceneNumber >= 13 && sceneNumber <= 27) {
-    if (sceneNumber >= 15 && sceneNumber <= 23) {
-      return "Heavy storm lighting with dark overcast sky, strong rain, dramatic cool tones, practical lighthouse illumination.";
-    }
-
-    return "Active storm lighting with dark clouds, rain, strong wind, dramatic natural contrast.";
-  }
-
-  if (sceneNumber === 28) {
-    return "Storm weakening with soft overcast daylight, wet surfaces, calmer atmosphere.";
-  }
-
-  if (sceneNumber >= 29) {
-    return "Peaceful clear morning after the storm, soft golden sunlight, wet reflective surfaces, calm blue sky.";
-  }
-
-  return "Natural cinematic lighting appropriate to the current story moment.";
 }
 
 /* =========================================================
-   NOAH TIMELINE
-========================================================= */
-
-function buildNoahTimeline(totalScenes) {
-  const core = createNoahCoreEvents();
-
-  if (totalScenes === 30) {
-    return core.map((event, index) => ({
-      ...event,
-      beat_index: 0,
-      beat_text: event.action,
-      source_event: event.id
-    }));
-  }
-
-  const subBeatTimeline = [];
-
-  for (const event of core) {
-    const beats = createSubBeats(event);
-
-    beats.forEach((beat, index) => {
-      subBeatTimeline.push({
-        ...event,
-        beat_index: index,
-        beat_text: beat,
-        source_event: event.id
-      });
-    });
-  }
-
-  if (totalScenes === 60) {
-    return subBeatTimeline.slice(0, 60);
-  }
-
-  if (totalScenes === 120) {
-    const expanded = [];
-
-    for (const item of subBeatTimeline) {
-      expanded.push({
-        ...item,
-        beat_index: 0,
-        beat_text: item.beat_text
-      });
-
-      expanded.push({
-        ...item,
-        beat_index: 1,
-        beat_text: item.beat_text
-      });
-    }
-
-    return expanded.slice(0, 120);
-  }
-
-  return subBeatTimeline.slice(0, totalScenes);
-}
-
-/* =========================================================
-   GENERIC ENGINE
+   GENERIC STORY ENGINE
 ========================================================= */
 
 function extractCharacters(prompt) {
@@ -799,7 +746,6 @@ function extractCharacters(prompt) {
   if (/\bmother\b/i.test(prompt)) characters.push("Mother");
   if (/\bgirl\b/i.test(prompt)) characters.push("Girl");
   if (/\bboy\b/i.test(prompt)) characters.push("Boy");
-  if (/\bgirl\b/i.test(prompt)) characters.push("Girl");
   if (/\bdriver\b/i.test(prompt)) characters.push("Delivery Driver");
   if (/\bhiker\b/i.test(prompt)) characters.push("Hiker");
 
@@ -874,7 +820,6 @@ function createGenericEvents(prompt) {
 
 function buildGenericTimeline(prompt, totalScenes) {
   const events = createGenericEvents(prompt);
-
   const timeline = [];
 
   for (let i = 0; i < totalScenes; i++) {
@@ -892,7 +837,7 @@ function buildGenericTimeline(prompt, totalScenes) {
 }
 
 /* =========================================================
-   STORY DETECTION
+   NOAH DETECTION
 ========================================================= */
 
 function isNoahStory(prompt) {
@@ -903,6 +848,64 @@ function isNoahStory(prompt) {
     text.includes("lighthouse") &&
     text.includes("storm")
   );
+}
+
+/* =========================================================
+   NOAH TIMELINE
+========================================================= */
+
+function buildNoahTimeline(totalScenes) {
+  const core = createNoahCoreEvents();
+
+  if (totalScenes === 30) {
+    return core.map((event) => ({
+      ...event,
+      beat_index: 0,
+      beat_text: event.action,
+      source_event: event.id
+    }));
+  }
+
+  const timeline = [];
+
+  for (const event of core) {
+    const beats = createSubBeats(event);
+
+    beats.forEach((beat, index) => {
+      timeline.push({
+        ...event,
+        beat_index: index,
+        beat_text: beat,
+        source_event: event.id
+      });
+    });
+  }
+
+  if (totalScenes === 60) {
+    return timeline.slice(0, 60);
+  }
+
+  if (totalScenes === 120) {
+    const expanded = [];
+
+    for (const item of timeline) {
+      expanded.push({
+        ...item,
+        beat_index: 0,
+        beat_text: item.beat_text
+      });
+
+      expanded.push({
+        ...item,
+        beat_index: 1,
+        beat_text: item.beat_text
+      });
+    }
+
+    return expanded.slice(0, 120);
+  }
+
+  return timeline.slice(0, totalScenes);
 }
 
 function buildTimeline(prompt, totalScenes) {
@@ -918,11 +921,14 @@ function buildTimeline(prompt, totalScenes) {
 ========================================================= */
 
 function createScenes(prompt, duration, aspectRatio) {
-  const totalScenes = Math.max(1, Math.floor(Number(duration) / 10));
+  const totalScenes = Math.max(
+    1,
+    Math.floor(Number(duration) / 10)
+  );
 
   const timeline = buildTimeline(prompt, totalScenes);
 
-  const scenes = timeline.map((event, index) => {
+  return timeline.map((event, index) => {
     const sceneNumber = index + 1;
     const times = sceneTimes(sceneNumber);
 
@@ -930,27 +936,22 @@ function createScenes(prompt, duration, aspectRatio) {
     const props = event.props || [];
 
     const characterLocks = characters.map((character) => {
-      if (CHARACTER_LOCKS[character]) {
-        return CHARACTER_LOCKS[character];
-      }
-
-      return `${character}, maintain exactly the same face, age, hairstyle, body proportions, clothing, and appearance in every scene.`;
+      return (
+        CHARACTER_LOCKS[character] ||
+        `${character}, maintain exactly the same face, age, hairstyle, body proportions, clothing, and appearance in every scene.`
+      );
     });
 
-    const camera = cameraForScene(event, event.beat_index || 0);
-    const lighting = lightingForScene(event, sceneNumber);
+    const camera = cameraForScene(
+      event,
+      event.beat_index || 0
+    );
 
-    let action = cleanText(event.beat_text || event.action);
+    const lighting = lightingForScene(event);
 
-    if (sceneNumber === 30 && isNoahStory(prompt)) {
-      action =
-        "The villagers gather around Noah and thank him for warning the town and restoring the lighthouse signal while he stands beside his proud father.";
-    }
-
-    if (sceneNumber === 60 && isNoahStory(prompt)) {
-      action =
-        "The villagers gather around Noah and thank him for helping save the town as Noah stands beside his proud father in the safe coastal town.";
-    }
+    const action = cleanText(
+      event.beat_text || event.action
+    );
 
     const visualPrompt = [
       `Cinematic ${aspectRatio} video scene.`,
@@ -979,9 +980,9 @@ function createScenes(prompt, duration, aspectRatio) {
       end_time: times.end_time,
 
       source_event: event.source_event,
+      event_type: event.type,
 
       action,
-
       characters,
       location: event.location,
       props,
@@ -998,8 +999,6 @@ function createScenes(prompt, duration, aspectRatio) {
         "Maintain exact character identity, face, age, hairstyle, clothing, body proportions, and visual style from previous scenes."
     };
   });
-
-  return scenes;
 }
 
 /* =========================================================
@@ -1009,19 +1008,28 @@ function createScenes(prompt, duration, aspectRatio) {
 function createProject(body) {
   const prompt = cleanText(body.prompt);
 
-  const duration = Number(body.duration || 30);
+  const requestedDuration = Number(body.duration || 30);
 
-  const allowedDurations = [10, 30, 60, 300, 600, 1200];
+  const allowedDurations = [
+    10,
+    30,
+    60,
+    300,
+    600,
+    1200
+  ];
 
-  const safeDuration = allowedDurations.includes(duration)
-    ? duration
+  const duration = allowedDurations.includes(
+    requestedDuration
+  )
+    ? requestedDuration
     : 30;
 
   const aspectRatio = body.aspectRatio || "9:16";
 
   const scenes = createScenes(
     prompt,
-    safeDuration,
+    duration,
     aspectRatio
   );
 
@@ -1030,15 +1038,12 @@ function createProject(body) {
     mode: DEMO_MODE ? "DEMO" : "AI",
     gemini_enabled: GEMINI_ENABLED,
 
-    duration: safeDuration,
+    duration,
     total_scenes: scenes.length,
-
     scene_duration_seconds: 10,
-
     aspect_ratio: aspectRatio,
 
     prompt,
-
     scenes
   };
 }
@@ -1048,18 +1053,32 @@ function createProject(body) {
 ========================================================= */
 
 app.get("/", (req, res) => {
-  res.send("SANAPTAI V19 is live");
+  res.send("SANAPTAI V20 is live");
 });
 
 app.get("/api/test", (req, res) => {
   res.json({
     status: "ok",
     engine: ENGINE_VERSION,
-    engine_name: "Cinematic Event-Aware Story Engine",
+    engine_name: "Event-Aware Cinematic Story Engine",
     demo_mode: DEMO_MODE,
     gemini_enabled: GEMINI_ENABLED,
     exact_scene_duration: "10 seconds",
-    supported_scenes: [1, 3, 6, 30, 60, 120]
+    supported_durations: [
+      "10 seconds",
+      "30 seconds",
+      "60 seconds",
+      "5 minutes",
+      "10 minutes",
+      "20 minutes"
+    ],
+    key_fixes: [
+      "Event-aware lighting",
+      "Event-aware camera",
+      "Chronological 60-scene expansion",
+      "Protected final resolution",
+      "No Gemini usage"
+    ]
   });
 });
 
@@ -1091,17 +1110,15 @@ app.post("/api/create-project", (req, res) => {
   }
 });
 
-/*
-  Reserved for future AI mode.
-
-  Gemini remains OFF during V19 testing.
-*/
+/* =========================================================
+   FUTURE AI MODE
+========================================================= */
 
 app.post("/api/plan-scenes", (req, res) => {
   res.status(501).json({
     status: "reserved",
     message:
-      "AI scene planning is reserved for a future version. V19 currently uses the deterministic Demo Engine.",
+      "AI scene planning is reserved for a future version. V20 currently uses the deterministic Demo Engine.",
     gemini_enabled: false
   });
 });
@@ -1124,5 +1141,7 @@ app.use((err, req, res, next) => {
 ========================================================= */
 
 app.listen(PORT, () => {
-  console.log(`SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`);
+  console.log(
+    `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
+  );
 });
