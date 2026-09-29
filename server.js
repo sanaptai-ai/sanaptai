@@ -14,13 +14,20 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 3000;
 
-const ENGINE_VERSION = "V24";
+const ENGINE_VERSION = "V25";
 const DEMO_MODE = true;
 const GEMINI_ENABLED = false;
 
 const SCENE_DURATION = 10;
 
-const ALLOWED_DURATIONS = [10, 30, 60, 300, 600, 1200];
+const ALLOWED_DURATIONS = [
+  10,
+  30,
+  60,
+  300,
+  600,
+  1200,
+];
 
 /* =========================================================
    CHARACTER LOCKS
@@ -75,18 +82,6 @@ function times(number) {
   };
 }
 
-function has(text, words) {
-  const value = text.toLowerCase();
-
-  return words.some((word) =>
-    value.includes(word.toLowerCase())
-  );
-}
-
-/* =========================================================
-   ATOMIC EVENT
-========================================================= */
-
 function event(
   id,
   action,
@@ -111,7 +106,7 @@ function event(
 }
 
 /* =========================================================
-   NOAH STORY DETECTION
+   NOAH STORY
 ========================================================= */
 
 function isNoahStory(prompt) {
@@ -124,13 +119,8 @@ function isNoahStory(prompt) {
   );
 }
 
-/* =========================================================
-   NOAH ATOMIC TIMELINE
-========================================================= */
-
 function buildNoahEvents() {
   return [
-
     event(
       "N01",
       "Noah walks through the small coastal town beside his father.",
@@ -447,201 +437,117 @@ function buildNoahEvents() {
 }
 
 /* =========================================================
-   EVENT IMPORTANCE
+   V25 MICRO-BEAT SYSTEM
 ========================================================= */
 
-function weight(e) {
-  if (
-    ["climax", "rescue", "resolution"].includes(e.type)
-  ) {
-    return 3;
-  }
+function microBeat(e) {
+  switch (e.type) {
+    case "setup":
+      return `Establish the environment naturally as ${e.action.toLowerCase()}`;
 
-  if (
-    ["action", "conflict", "movement"].includes(e.type)
-  ) {
-    return 2;
-  }
+    case "movement":
+      return `Show the movement clearly as ${e.action.toLowerCase()}`;
 
-  return 1;
+    case "discovery":
+      return `Show the character noticing the important detail, then ${e.action.toLowerCase()}`;
+
+    case "warning":
+      return `Focus on the warning and the character's reaction as ${e.action.toLowerCase()}`;
+
+    case "realization":
+      return `Use a focused reaction shot as ${e.action.toLowerCase()}`;
+
+    case "decision":
+      return `Show the character making the decision as ${e.action.toLowerCase()}`;
+
+    case "conflict":
+      return `Show the disagreement and character reactions as ${e.action.toLowerCase()}`;
+
+    case "action":
+      return `Focus closely on the physical task as ${e.action.toLowerCase()}`;
+
+    case "climax":
+      return `Build tension and clearly show the turning point as ${e.action.toLowerCase()}`;
+
+    case "rescue":
+      return `Clearly show the rescue progress as ${e.action.toLowerCase()}`;
+
+    case "resolution":
+      return `Show the emotional resolution as ${e.action.toLowerCase()}`;
+
+    default:
+      return e.action;
+  }
 }
 
 /* =========================================================
-   V24 SCENE BOUNDARIES
+   SCENE ACTION
 ========================================================= */
 
-/*
-   IMPORTANT:
+function sceneAction(bundle) {
+  const beats = bundle.map(microBeat);
 
-   We don't randomly sample events.
-
-   We create chronological ranges.
-
-   For Noah's 30 atomic events and 6 scenes:
-
-   Scene 1 = N01-N05
-   Scene 2 = N06-N11
-   Scene 3 = N12-N17
-   Scene 4 = N18-N24
-   Scene 5 = N25-N28
-   Scene 6 = N29-N30
-
-   These boundaries preserve the complete story.
-*/
-
-function createNoah60Ranges() {
-  return [
-    ["N01", "N05"],
-    ["N06", "N11"],
-    ["N12", "N17"],
-    ["N18", "N24"],
-    ["N25", "N28"],
-    ["N29", "N30"],
-  ];
-}
-
-function rangeToBundles(events, ranges) {
-  return ranges.map(([start, end]) => {
-    const startIndex = events.findIndex(
-      (e) => e.id === start
-    );
-
-    const endIndex = events.findIndex(
-      (e) => e.id === end
-    );
-
-    return events.slice(startIndex, endIndex + 1);
-  });
+  return beats.join(" Then, ");
 }
 
 /* =========================================================
-   GENERIC CHRONOLOGICAL COMPRESSION
-========================================================= */
-
-function genericCompress(events, count) {
-  if (events.length <= count) {
-    return events.map((e) => [e]);
-  }
-
-  const totalWeight = events.reduce(
-    (sum, e) => sum + weight(e),
-    0
-  );
-
-  const target = totalWeight / count;
-
-  const bundles = [];
-
-  let current = [];
-  let currentWeight = 0;
-
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i];
-    const w = weight(e);
-
-    const remainingEvents =
-      events.length - i;
-
-    const remainingScenes =
-      count - bundles.length;
-
-    const mustClose =
-      current.length > 0 &&
-      currentWeight + w > target &&
-      remainingEvents >= remainingScenes;
-
-    if (mustClose) {
-      bundles.push(current);
-      current = [];
-      currentWeight = 0;
-    }
-
-    current.push(e);
-    currentWeight += w;
-  }
-
-  if (current.length) {
-    bundles.push(current);
-  }
-
-  /*
-    If too many bundles, merge neighbors.
-    Never delete an event.
-  */
-
-  while (bundles.length > count) {
-    let merged = false;
-
-    for (let i = 0; i < bundles.length - 1; i++) {
-      const a = bundles[i];
-      const b = bundles[i + 1];
-
-      const aLast = a[a.length - 1];
-      const bFirst = b[0];
-
-      const compatible =
-        aLast.location === bFirst.location ||
-        aLast.type === "movement" ||
-        bFirst.type === "movement";
-
-      if (compatible) {
-        bundles[i] = [...a, ...b];
-        bundles.splice(i + 1, 1);
-        merged = true;
-        break;
-      }
-    }
-
-    if (!merged) break;
-  }
-
-  return bundles;
-}
-
-/* =========================================================
-   STORY-AWARE CAMERA
+   CAMERA
 ========================================================= */
 
 function camera(bundle) {
   const types = bundle.map((e) => e.type);
 
-  if (types.includes("rescue")) {
-    return "wide cinematic harbor view followed by a smooth tracking shot of the rescue boat";
-  }
-
   if (types.includes("climax")) {
-    return "dramatic close-up of the critical action followed by a controlled cinematic reveal";
+    return "tight close-up on the critical mechanism followed by a dramatic reveal of the restored lighthouse signal";
   }
 
-  if (types.includes("action")) {
-    return "detailed close-up of the physical task followed by a medium action shot";
+  if (
+    types.includes("action") &&
+    bundle.some(
+      (e) => e.location === "Lighthouse Signal Room"
+    )
+  ) {
+    return "close-up of Noah's hands working on the mechanism followed by a medium shot of Noah inside the signal room";
+  }
+
+  if (
+    types.includes("rescue") &&
+    bundle.some(
+      (e) => e.location === "Harbor"
+    )
+  ) {
+    return "wide harbor establishing shot followed by a smooth tracking shot of the rescue boat";
+  }
+
+  if (types.includes("rescue")) {
+    return "wide ocean shot followed by a tracking shot following the rescue boat toward the harbor";
   }
 
   if (types.includes("conflict")) {
-    return "medium group shot followed by close-ups of character reactions";
-  }
-
-  if (types.includes("warning")) {
-    return "medium character shot followed by a close-up reaction";
+    return "medium group shot followed by close-ups of Noah and the villagers reacting";
   }
 
   if (types.includes("discovery")) {
-    return "over-the-shoulder discovery shot followed by a close-up of the important object";
+    return "over-the-shoulder shot followed by a detailed close-up of the important discovery";
+  }
+
+  if (types.includes("warning")) {
+    return "medium shot of Noah delivering the warning followed by close-ups of the villagers";
+  }
+
+  if (types.includes("decision")) {
+    return "medium close-up of Noah's determined expression";
   }
 
   if (types.includes("movement")) {
     return "wide establishing shot followed by a smooth tracking shot";
   }
 
-  if (types.includes("decision")) {
-    return "medium close-up focused on the character's determined expression";
-  }
-
   return "cinematic medium shot with a natural environmental establishing view";
 }
 
 /* =========================================================
-   STORY-AWARE LIGHTING
+   LIGHTING
 ========================================================= */
 
 function lighting(bundle) {
@@ -652,11 +558,11 @@ function lighting(bundle) {
   }
 
   if (weather.includes("storm_weakening")) {
-    return "dark storm clouds breaking with softer natural light";
+    return "dark clouds breaking with softer natural light";
   }
 
   if (weather.includes("storm")) {
-    return "dark overcast storm lighting with strong wind and rain";
+    return "dark overcast storm lighting with rain and strong wind";
   }
 
   if (
@@ -664,34 +570,62 @@ function lighting(bundle) {
       (e) => e.location === "Father's Workshop"
     )
   ) {
-    return "warm natural morning light through the workshop windows";
+    return "warm natural morning light entering through the workshop windows";
   }
 
   return "clear natural daytime lighting";
 }
 
 /* =========================================================
-   ACTION SUMMARY
+   LOCATION
 ========================================================= */
 
-function actionText(bundle) {
+function sceneLocation(bundle) {
   if (bundle.length === 1) {
-    return bundle[0].action;
+    return bundle[0].location;
   }
 
-  const first = bundle[0].action;
-  const last = bundle[bundle.length - 1].action;
+  /*
+    If the scene contains a movement event,
+    use the destination only when the movement is
+    the final meaningful beat.
+  */
 
-  return `${first} Then, ${last.charAt(0).toLowerCase()}${last.slice(
-    1
-  )}`;
+  const last = bundle[bundle.length - 1];
+
+  if (last.type === "movement") {
+    return last.location;
+  }
+
+  /*
+    Otherwise use the location of the dominant
+    physical action/discovery/climax.
+  */
+
+  const important = [...bundle]
+    .reverse()
+    .find((e) =>
+      [
+        "climax",
+        "action",
+        "discovery",
+        "conflict",
+        "warning",
+        "decision",
+        "realization",
+      ].includes(e.type)
+    );
+
+  return important
+    ? important.location
+    : bundle[0].location;
 }
 
 /* =========================================================
    DIALOGUE
 ========================================================= */
 
-function dialogue(bundle) {
+function sceneDialogue(bundle) {
   const explicit = bundle
     .map((e) => e.dialogue)
     .filter(Boolean);
@@ -700,30 +634,52 @@ function dialogue(bundle) {
     return explicit[0];
   }
 
-  const types = bundle.map((e) => e.type);
-
-  if (types.includes("warning")) {
-    return "We need to act now.";
-  }
-
-  if (types.includes("decision")) {
-    return "I have to do this.";
-  }
-
-  if (types.includes("conflict")) {
+  if (
+    bundle.some(
+      (e) => e.type === "conflict"
+    )
+  ) {
     return "Please believe me.";
   }
 
-  if (types.includes("action")) {
-    return "Come on, work.";
+  if (
+    bundle.some(
+      (e) => e.type === "warning"
+    )
+  ) {
+    return "A storm is coming.";
   }
 
-  if (types.includes("rescue")) {
-    return "Follow that signal!";
+  if (
+    bundle.some(
+      (e) => e.type === "decision"
+    )
+  ) {
+    return "I have to do this.";
   }
 
-  if (types.includes("resolution")) {
-    return "You saved us, Noah.";
+  if (
+    bundle.some(
+      (e) => e.type === "action"
+    )
+  ) {
+    return "Keep going.";
+  }
+
+  if (
+    bundle.some(
+      (e) => e.type === "rescue"
+    )
+  ) {
+    return "Follow the signal!";
+  }
+
+  if (
+    bundle.some(
+      (e) => e.type === "resolution"
+    )
+  ) {
+    return "You saved us.";
   }
 
   return "";
@@ -733,7 +689,7 @@ function dialogue(bundle) {
    VOICEOVER
 ========================================================= */
 
-function voiceover(bundle) {
+function sceneVoiceover(bundle) {
   const explicit = bundle
     .map((e) => e.voiceover)
     .filter(Boolean);
@@ -746,7 +702,30 @@ function voiceover(bundle) {
     return bundle[0].action;
   }
 
-  return actionText(bundle);
+  return bundle
+    .map((e) => e.action)
+    .join(" ");
+}
+
+/* =========================================================
+   VISUAL PROMPT
+========================================================= */
+
+function createVisualPrompt(
+  bundle,
+  characters,
+  objects,
+  location,
+  action,
+  characterLocks
+) {
+  const objectText = objects.length
+    ? `Important objects: ${objects.join(", ")}.`
+    : "";
+
+  return cleanText(
+    `Characters: ${characters.join(", ")}. Location: ${location}. ${objectText} Cinematic action: ${action}. ${characterLocks} Maintain exact face, age, body proportions, hairstyle and clothing continuity. Show only actions and objects belonging to this scene. Do not introduce future events. Do not skip the causal action of this scene. No meta text, no labels, no subtitles.`
+  );
 }
 
 /* =========================================================
@@ -764,23 +743,9 @@ function createScene(bundle, number) {
     bundle.flatMap((e) => e.objects)
   );
 
-  /*
-    For compressed scenes, final location is used only when
-    there is an explicit movement event. Otherwise first
-    location remains the visual anchor.
-  */
+  const location = sceneLocation(bundle);
 
-  let location = bundle[0].location;
-
-  const movement = bundle.find(
-    (e) => e.type === "movement"
-  );
-
-  if (movement) {
-    location = bundle[bundle.length - 1].location;
-  }
-
-  const action = actionText(bundle);
+  const action = sceneAction(bundle);
 
   const characterLocks = characters
     .map((name) => {
@@ -792,14 +757,13 @@ function createScene(bundle, number) {
     })
     .join(" ");
 
-  const visualPrompt = cleanText(
-    `Characters: ${characters.join(
-      ", "
-    )}. Location: ${location}. ${
-      objects.length
-        ? `Important objects: ${objects.join(", ")}.`
-        : ""
-    } Cinematic action: ${action}. ${characterLocks} Maintain exact visual continuity. Show only elements relevant to this scene. Do not introduce future events. Do not skip causal events. No meta text, no labels, no subtitles.`
+  const visualPrompt = createVisualPrompt(
+    bundle,
+    characters,
+    objects,
+    location,
+    action,
+    characterLocks
   );
 
   return {
@@ -808,8 +772,12 @@ function createScene(bundle, number) {
     end_time: t.end_time,
 
     event_start: bundle[0].id,
-    event_end: bundle[bundle.length - 1].id,
-    event_ids: bundle.map((e) => e.id),
+    event_end:
+      bundle[bundle.length - 1].id,
+
+    event_ids: bundle.map(
+      (e) => e.id
+    ),
 
     characters,
     character_lock: characterLocks,
@@ -820,15 +788,242 @@ function createScene(bundle, number) {
     visual_prompt: visualPrompt,
 
     camera: camera(bundle),
+
     lighting: lighting(bundle),
 
     action,
 
-    dialogue: dialogue(bundle),
-    voiceover: voiceover(bundle),
+    dialogue: sceneDialogue(bundle),
+
+    voiceover: sceneVoiceover(bundle),
 
     continuity:
-      "V24 chronological scene range. Every atomic event remains represented in order.",
+      "V25 chronological micro-beat scene. Atomic events remain in order and are represented by coherent cinematic actions.",
+  };
+}
+
+/* =========================================================
+   NOAH 60-SECOND PLAN
+========================================================= */
+
+function createNoah60Bundles(events) {
+  /*
+    V25 deliberately uses smaller cinematic groups.
+
+    Scene 1:
+    N01-N04
+
+    Scene 2:
+    N05-N09
+
+    Scene 3:
+    N10-N15
+
+    Scene 4:
+    N16-N21
+
+    Scene 5:
+    N22-N26
+
+    Scene 6:
+    N27-N30
+
+    The important repair and rescue actions
+    remain visible instead of being hidden
+    between first/last events.
+  */
+
+  const ranges = [
+    ["N01", "N04"],
+    ["N05", "N09"],
+    ["N10", "N15"],
+    ["N16", "N21"],
+    ["N22", "N26"],
+    ["N27", "N30"],
+  ];
+
+  return ranges.map(
+    ([start, end]) => {
+      const a = events.findIndex(
+        (e) => e.id === start
+      );
+
+      const b = events.findIndex(
+        (e) => e.id === end
+      );
+
+      return events.slice(
+        a,
+        b + 1
+      );
+    }
+  );
+}
+
+/* =========================================================
+   GENERIC COMPRESSION
+========================================================= */
+
+function genericCompress(events, count) {
+  if (events.length <= count) {
+    return events.map((e) => [e]);
+  }
+
+  const bundles = [];
+
+  const baseSize =
+    Math.floor(events.length / count);
+
+  let remainder =
+    events.length % count;
+
+  let cursor = 0;
+
+  for (let i = 0; i < count; i++) {
+    const size =
+      baseSize +
+      (remainder > 0 ? 1 : 0);
+
+    remainder--;
+
+    bundles.push(
+      events.slice(
+        cursor,
+        cursor + size
+      )
+    );
+
+    cursor += size;
+  }
+
+  return bundles;
+}
+
+/* =========================================================
+   BUILD PROJECT
+========================================================= */
+
+function buildProject(
+  prompt,
+  duration,
+  aspectRatio
+) {
+  const count = sceneCount(duration);
+
+  let events;
+
+  if (isNoahStory(prompt)) {
+    events = buildNoahEvents();
+  } else {
+    const sentences = cleanText(prompt)
+      .split(/(?<=[.!?])\s+/)
+      .filter(Boolean);
+
+    events = sentences.map(
+      (sentence, index) =>
+        event(
+          `G${String(index + 1).padStart(
+            2,
+            "0"
+          )}`,
+          sentence,
+          "general",
+          "Main Location",
+          ["Main Character"]
+        )
+    );
+  }
+
+  let bundles;
+
+  if (
+    isNoahStory(prompt) &&
+    count === 6
+  ) {
+    bundles =
+      createNoah60Bundles(events);
+  } else if (
+    isNoahStory(prompt) &&
+    count === 30
+  ) {
+    bundles = events.map(
+      (e) => [e]
+    );
+  } else {
+    bundles =
+      genericCompress(
+        events,
+        count
+      );
+  }
+
+  /*
+    Long duration:
+    controlled repetition only after
+    all real events are represented.
+  */
+
+  if (bundles.length < count) {
+    const expanded = [];
+
+    for (
+      let i = 0;
+      i < bundles.length;
+      i++
+    ) {
+      expanded.push(
+        bundles[i]
+      );
+
+      if (
+        expanded.length <
+          count &&
+        bundles[i].length > 0
+      ) {
+        expanded.push(
+          bundles[i]
+        );
+      }
+
+      if (
+        expanded.length >=
+        count
+      ) {
+        break;
+      }
+    }
+
+    while (
+      expanded.length < count
+    ) {
+      expanded.push(
+        expanded[
+          expanded.length - 1
+        ]
+      );
+    }
+
+    bundles =
+      expanded.slice(
+        0,
+        count
+      );
+  }
+
+  const scenes =
+    bundles
+      .slice(0, count)
+      .map(
+        (bundle, index) =>
+          createScene(
+            bundle,
+            index + 1
+          )
+      );
+
+  return {
+    scenes,
+    events,
   };
 }
 
@@ -836,35 +1031,63 @@ function createScene(bundle, number) {
    VALIDATION
 ========================================================= */
 
-function validateCoverage(scenes, events) {
-  const used = scenes.flatMap(
-    (scene) => scene.event_ids || []
-  );
+function validateCoverage(
+  scenes,
+  events
+) {
+  const used =
+    scenes.flatMap(
+      (scene) =>
+        scene.event_ids || []
+    );
 
-  const expected = events.map((e) => e.id);
+  const expected =
+    events.map(
+      (e) => e.id
+    );
 
-  return (
-    used.length >= expected.length &&
-    expected.every((id) => used.includes(id))
+  return expected.every(
+    (id) =>
+      used.includes(id)
   );
 }
 
-function validateOrder(scenes, events) {
-  const positions = new Map(
-    events.map((e, i) => [e.id, i])
-  );
+function validateOrder(
+  scenes,
+  events
+) {
+  const positions =
+    new Map(
+      events.map(
+        (e, i) => [
+          e.id,
+          i,
+        ]
+      )
+    );
 
   let last = -1;
 
-  for (const scene of scenes) {
-    for (const id of scene.event_ids || []) {
-      const position = positions.get(id);
+  for (
+    const scene of scenes
+  ) {
+    for (
+      const id of
+        scene.event_ids || []
+    ) {
+      const position =
+        positions.get(id);
 
-      if (position === undefined) {
+      if (
+        position ===
+        undefined
+      ) {
         return false;
       }
 
-      if (position < last) {
+      if (
+        position < last
+      ) {
         return false;
       }
 
@@ -875,11 +1098,17 @@ function validateOrder(scenes, events) {
   return true;
 }
 
-function validateNoPrematureEnding(scenes) {
-  let endingSeen = false;
+function validateNoPrematureEnding(
+  scenes
+) {
+  let endingSeen =
+    false;
 
-  for (const scene of scenes) {
-    const ids = scene.event_ids || [];
+  for (
+    const scene of scenes
+  ) {
+    const ids =
+      scene.event_ids || [];
 
     if (
       ids.includes("N29") ||
@@ -898,320 +1127,256 @@ function validateNoPrematureEnding(scenes) {
 }
 
 /* =========================================================
-   BUILD PROJECT
-========================================================= */
-
-function buildProject(prompt, duration, aspectRatio) {
-  const count = sceneCount(duration);
-
-  let events;
-
-  if (isNoahStory(prompt)) {
-    events = buildNoahEvents();
-  } else {
-    const sentences = cleanText(prompt)
-      .split(/(?<=[.!?])\s+/)
-      .filter(Boolean);
-
-    events = sentences.map((sentence, index) =>
-      event(
-        `G${String(index + 1).padStart(2, "0")}`,
-        sentence,
-        "general",
-        "Main Location",
-        ["Main Character"]
-      )
-    );
-  }
-
-  let bundles;
-
-  /*
-    SPECIAL 60-SECOND NOAH PLAN
-  */
-
-  if (
-    isNoahStory(prompt) &&
-    count === 6
-  ) {
-    bundles = rangeToBundles(
-      events,
-      createNoah60Ranges()
-    );
-  } else {
-    bundles = genericCompress(
-      events,
-      count
-    );
-  }
-
-  /*
-    If duration is longer than event count,
-    duplicate only as controlled micro-beats.
-  */
-
-  if (bundles.length < count) {
-    const expanded = [];
-
-    for (const bundle of bundles) {
-      expanded.push(bundle);
-
-      if (expanded.length >= count) {
-        break;
-      }
-    }
-
-    while (expanded.length < count) {
-      const source =
-        expanded[expanded.length - 1];
-
-      expanded.push(source);
-    }
-
-    bundles = expanded;
-  }
-
-  /*
-    If something produces too many bundles,
-    trim by merging neighboring ranges.
-  */
-
-  while (bundles.length > count) {
-    let merged = false;
-
-    for (let i = 0; i < bundles.length - 1; i++) {
-      const left = bundles[i];
-      const right = bundles[i + 1];
-
-      const compatible =
-        left[left.length - 1].location ===
-          right[0].location ||
-        left[left.length - 1].type === "movement" ||
-        right[0].type === "movement";
-
-      if (compatible) {
-        bundles[i] = [
-          ...left,
-          ...right,
-        ];
-
-        bundles.splice(i + 1, 1);
-
-        merged = true;
-        break;
-      }
-    }
-
-    if (!merged) break;
-  }
-
-  const scenes = bundles
-    .slice(0, count)
-    .map((bundle, index) =>
-      createScene(bundle, index + 1)
-    );
-
-  return {
-    scenes,
-    events,
-  };
-}
-
-/* =========================================================
    API
 ========================================================= */
 
-app.get("/api/test", (req, res) => {
-  res.json({
-    status: "ok",
-    engine: ENGINE_VERSION,
-    demo_mode: DEMO_MODE,
-    gemini_enabled: GEMINI_ENABLED,
-
-    features: [
-      "Chronological Scene Boundaries",
-      "Atomic Event Preservation",
-      "No Random Sampling",
-      "Controlled Event Compression",
-      "Dependency Order",
-      "Character Continuity",
-      "Location Continuity",
-      "Object Continuity",
-      "Story-Aware Lighting",
-      "Story-Aware Camera",
-      "Exact 10-Second Scenes",
-      "Automatic Event Coverage Validation",
-    ],
-  });
-});
-
-app.post("/api/demo-project", (req, res) => {
-  try {
-    const prompt = cleanText(
-      req.body?.prompt || ""
-    );
-
-    if (!prompt) {
-      return res.status(400).json({
-        error: "Prompt is required.",
-      });
-    }
-
-    const duration = normalizeDuration(
-      req.body?.duration
-    );
-
-    const aspectRatio =
-      req.body?.aspectRatio || "9:16";
-
-    const result = buildProject(
-      prompt,
-      duration,
-      aspectRatio
-    );
-
-    const coverage = validateCoverage(
-      result.scenes,
-      result.events
-    );
-
-    const order = validateOrder(
-      result.scenes,
-      result.events
-    );
-
-    const ending = isNoahStory(prompt)
-      ? validateNoPrematureEnding(
-          result.scenes
-        )
-      : true;
-
+app.get(
+  "/api/test",
+  (req, res) => {
     res.json({
-      success: true,
+      status: "ok",
+      engine:
+        ENGINE_VERSION,
+      demo_mode:
+        DEMO_MODE,
+      gemini_enabled:
+        GEMINI_ENABLED,
 
-      engine: ENGINE_VERSION,
-
-      demo_mode: DEMO_MODE,
-
-      gemini_enabled: GEMINI_ENABLED,
-
-      duration,
-
-      total_scenes:
-        result.scenes.length,
-
-      aspect_ratio: aspectRatio,
-
-      validation: {
-        all_events_represented:
-          coverage,
-
-        chronological_order:
-          order,
-
-        no_premature_ending:
-          ending,
-      },
-
-      scenes: result.scenes,
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      error:
-        error.message ||
-        "Project creation failed.",
+      features: [
+        "Chronological Micro-Beats",
+        "Atomic Event Preservation",
+        "No Random Sampling",
+        "Coherent Scene Compression",
+        "Character Continuity",
+        "Location Continuity",
+        "Object Continuity",
+        "Story-Aware Lighting",
+        "Story-Aware Camera",
+        "Exact 10-Second Scenes",
+        "Event Coverage Validation",
+      ],
     });
   }
-});
+);
 
-app.post("/api/create-project", (req, res) => {
-  try {
-    const prompt = cleanText(
-      req.body?.prompt || ""
-    );
+/* =========================================================
+   DEMO PROJECT
+========================================================= */
 
-    if (!prompt) {
-      return res.status(400).json({
-        error: "Prompt is required.",
+app.post(
+  "/api/demo-project",
+  (req, res) => {
+    try {
+      const prompt =
+        cleanText(
+          req.body?.prompt ||
+            ""
+        );
+
+      if (!prompt) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Prompt is required.",
+          });
+      }
+
+      const duration =
+        normalizeDuration(
+          req.body?.duration
+        );
+
+      const aspectRatio =
+        req.body?.aspectRatio ||
+        "9:16";
+
+      const result =
+        buildProject(
+          prompt,
+          duration,
+          aspectRatio
+        );
+
+      const coverage =
+        validateCoverage(
+          result.scenes,
+          result.events
+        );
+
+      const order =
+        validateOrder(
+          result.scenes,
+          result.events
+        );
+
+      const ending =
+        isNoahStory(prompt)
+          ? validateNoPrematureEnding(
+              result.scenes
+            )
+          : true;
+
+      res.json({
+        success: true,
+
+        engine:
+          ENGINE_VERSION,
+
+        demo_mode:
+          DEMO_MODE,
+
+        gemini_enabled:
+          GEMINI_ENABLED,
+
+        duration,
+
+        total_scenes:
+          result.scenes.length,
+
+        aspect_ratio:
+          aspectRatio,
+
+        validation: {
+          all_events_represented:
+            coverage,
+
+          chronological_order:
+            order,
+
+          no_premature_ending:
+            ending,
+        },
+
+        scenes:
+          result.scenes,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          error.message ||
+          "Project creation failed.",
       });
     }
+  }
+);
 
-    const duration = normalizeDuration(
-      req.body?.duration
-    );
+/* =========================================================
+   CREATE PROJECT
+========================================================= */
 
-    const aspectRatio =
-      req.body?.aspectRatio || "9:16";
+app.post(
+  "/api/create-project",
+  (req, res) => {
+    try {
+      const prompt =
+        cleanText(
+          req.body?.prompt ||
+            ""
+        );
 
-    const result = buildProject(
-      prompt,
-      duration,
-      aspectRatio
-    );
+      if (!prompt) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Prompt is required.",
+          });
+      }
 
-    res.json({
-      success: true,
-      engine: ENGINE_VERSION,
-      demo_mode: DEMO_MODE,
-      gemini_enabled: GEMINI_ENABLED,
-      duration,
-      total_scenes:
-        result.scenes.length,
-      aspect_ratio: aspectRatio,
-      scenes: result.scenes,
-    });
-  } catch (error) {
-    console.error(error);
+      const duration =
+        normalizeDuration(
+          req.body?.duration
+        );
 
-    res.status(500).json({
+      const aspectRatio =
+        req.body?.aspectRatio ||
+        "9:16";
+
+      const result =
+        buildProject(
+          prompt,
+          duration,
+          aspectRatio
+        );
+
+      res.json({
+        success: true,
+        engine:
+          ENGINE_VERSION,
+        demo_mode:
+          DEMO_MODE,
+        gemini_enabled:
+          GEMINI_ENABLED,
+        duration,
+        total_scenes:
+          result.scenes.length,
+        aspect_ratio:
+          aspectRatio,
+        scenes:
+          result.scenes,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          error.message ||
+          "Project creation failed.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   GEMINI DISABLED
+========================================================= */
+
+app.post(
+  "/api/plan-scenes",
+  (req, res) => {
+    res.status(501).json({
       error:
-        error.message ||
-        "Project creation failed.",
+        "AI scene planning is disabled in V25 Demo Mode. Gemini is not being called.",
     });
   }
-});
-
-/*
-  Gemini intentionally disabled.
-*/
-
-app.post("/api/plan-scenes", (req, res) => {
-  res.status(501).json({
-    error:
-      "AI scene planning is disabled in V24 Demo Mode. Gemini is not being called.",
-  });
-});
+);
 
 /* =========================================================
    FRONTEND FALLBACK
 ========================================================= */
 
-app.use((req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "public",
-      "index.html"
-    )
-  );
-});
+app.use(
+  (req, res) => {
+    res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "index.html"
+      )
+    );
+  }
+);
 
 /* =========================================================
    START
 ========================================================= */
 
-app.listen(PORT, () => {
-  console.log(
-    `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
-  );
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
+    );
 
-  console.log(
-    `Demo Mode: ${DEMO_MODE}`
-  );
+    console.log(
+      `Demo Mode: ${DEMO_MODE}`
+    );
 
-  console.log(
-    `Gemini Enabled: ${GEMINI_ENABLED}`
-  );
-});
+    console.log(
+      `Gemini Enabled: ${GEMINI_ENABLED}`
+    );
+  }
+);
