@@ -428,135 +428,148 @@ function splitIntoBeats(sentence) {
   const s = clean(sentence);
   const result = [];
 
+  const finish = (text) => {
+    const value = clean(text);
+    if (!value) return "";
+    return /[.!?]$/.test(value) ? value : `${value}.`;
+  };
+
   let match;
 
-  // Example:
-  // Alex discovers a key hidden inside the clock and uses it
-  // to open an old wooden locker.
+  // DISCOVER/FIND + USE
   match = s.match(
     /^(.+?\b(?:discovers|finds|notices)\b.+?)\s+and\s+(uses\s+.+)$/i
   );
 
   if (match) {
-    const first = clean(match[1]);
-    const secondAction = clean(match[2]);
+    const first = finish(match[1]);
+    const secondAction = finish(match[2]);
 
     const subjectMatch = first.match(
       /^([A-Z][a-z]+)\b/i
     );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    const subject = subjectMatch
+      ? subjectMatch[1]
+      : null;
 
     result.push(first);
 
-    if (subject) {
-      result.push(
-        clean(`${subject} ${secondAction}`)
-      );
-    } else {
-      result.push(secondAction);
-    }
+    result.push(
+      finish(
+        subject
+          ? `${subject} ${secondAction}`
+          : secondAction
+      )
+    );
 
     return result;
   }
 
-  // Finds X and opens/discovers Y.
+  // FINDS + OPENS / DISCOVERS / USES / TAKES / UNLOCKS
   match = s.match(
     /^(.+?\bfinds\b.+?)\s+and\s+(opens|discovers|uses|takes|unlocks)\s+(.+)$/i
   );
 
   if (match) {
-    const first = clean(match[1]);
-    const action = clean(`${match[2]} ${match[3]}`);
+    const first = finish(match[1]);
+    const action = finish(
+      `${match[2]} ${match[3]}`
+    );
 
     const subjectMatch = first.match(
       /^([A-Z][a-z]+)\b/i
     );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    const subject = subjectMatch
+      ? subjectMatch[1]
+      : null;
 
     result.push(first);
+
     result.push(
-      subject
-        ? clean(`${subject} ${action}`)
-        : action
+      finish(
+        subject
+          ? `${subject} ${action}`
+          : action
+      )
     );
 
     return result;
   }
 
-  // "Inside the locker, he finds X and discovers Y."
+  // FINDS + DISCOVERS
   match = s.match(
     /^(.*?\bfinds\b.*?)(?:\s+and\s+)(discovers\s+.*)$/i
   );
 
   if (match) {
-    const first = clean(match[1]);
-    const second = clean(match[2]);
+    const first = finish(match[1]);
+    const second = finish(match[2]);
 
-    const pronoun =
-      first.match(/\b(he|she|they)\b/i);
+    const pronoun = first.match(
+      /\b(he|she|they)\b/i
+    );
 
-    if (pronoun) {
-      result.push(first);
-      result.push(
-        clean(`${pronoun[1]} ${second}`)
-      );
-    } else {
-      result.push(first, second);
-    }
+    result.push(first);
+
+    result.push(
+      finish(
+        pronoun
+          ? `${pronoun[1]} ${second}`
+          : second
+      )
+    );
 
     return result;
   }
 
-  // Shows X, but Y.
+  // SHOWS + BUT
   match = s.match(
     /^(.*?\bshows\b.*?)(?:,\s*but\s+)(.*)$/i
   );
 
   if (match) {
     result.push(
-      clean(match[1]),
-      clean(match[2])
+      finish(match[1]),
+      finish(match[2])
     );
+
     return result;
   }
 
-  // Takes X and realizes Y.
+  // TAKES + REALIZES
   match = s.match(
     /^(.+?\btakes\b.+?)\s+and\s+(realizes\s+.+)$/i
   );
 
   if (match) {
-    const first = clean(match[1]);
-    const second = clean(match[2]);
+    const first = finish(match[1]);
+    const second = finish(match[2]);
 
-    const subjectMatch =
-      first.match(/^([A-Z][a-z]+)\b/i);
+    const subjectMatch = first.match(
+      /^([A-Z][a-z]+)\b/i
+    );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    const subject = subjectMatch
+      ? subjectMatch[1]
+      : null;
 
     result.push(first);
 
     result.push(
-      subject
-        ? clean(`${subject} ${second}`)
-        : second
+      finish(
+        subject
+          ? `${subject} ${second}`
+          : second
+      )
     );
 
     return result;
   }
 
-  return [s];
+  // NORMAL SINGLE BEAT
+  return [finish(s)];
 }
 
 function buildStoryBeats(story) {
