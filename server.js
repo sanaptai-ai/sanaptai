@@ -168,10 +168,7 @@ function activeCharacters(text, entities, protagonist) {
   // Named protagonist
   if (
     protagonist &&
-    new RegExp(
-      `\\b${protagonist}\\b`,
-      "i"
-    ).test(text)
+    new RegExp(`\\b${protagonist}\\b`, "i").test(text)
   ) {
     result.push(protagonist);
   }
@@ -180,26 +177,7 @@ function activeCharacters(text, entities, protagonist) {
   if (
     protagonist &&
     /\b(he|she|his|her|him|they|their)\b/i.test(text) &&
-    /\b(
-      finds|
-      discovers|
-      takes|
-      opens|
-      uses|
-      travels|
-      goes|
-      arrives|
-      enters|
-      notices|
-      receives|
-      sees|
-      reads|
-      examines|
-      realizes|
-      waits|
-      develops|
-      shows
-    )\b/ix.test(text)
+    /\b(finds|discovers|takes|opens|uses|travels|goes|arrives|enters|notices|receives|sees|reads|examines|realizes|waits|develops|shows)\b/i.test(text)
   ) {
     result.push(protagonist);
   }
@@ -207,20 +185,7 @@ function activeCharacters(text, entities, protagonist) {
   // Mother
   if (
     /\b(mother|mom)\b/i.test(text) &&
-    /\b(
-      says|
-      asks|
-      warns|
-      tells|
-      looks|
-      stands|
-      sits|
-      speaks|
-      shows|
-      hands|
-      gives|
-      becomes
-    )\b/ix.test(text)
+    /\b(says|asks|warns|tells|looks|stands|sits|speaks|shows|hands|gives|becomes)\b/i.test(text)
   ) {
     result.push("Mother");
   }
@@ -228,57 +193,24 @@ function activeCharacters(text, entities, protagonist) {
   // Father
   if (
     /\b(father|dad)\b/i.test(text) &&
-    /\b(
-      says|
-      asks|
-      warns|
-      tells|
-      looks|
-      stands|
-      sits|
-      speaks|
-      shows|
-      hands|
-      gives
-    )\b/ix.test(text)
+    /\b(says|asks|warns|tells|looks|stands|sits|speaks|shows|hands|gives)\b/i.test(text)
   ) {
     result.push("Father");
   }
 
-  // Grandfather is normally BACKSTORY.
-  // Only show him physically when clearly present.
+  // Grandfather is normally backstory.
   if (
     /\b(grandfather|grandpa)\b/i.test(text) &&
-    /\b(
-      stands|
-      sits|
-      walks|
-      enters|
-      leaves|
-      speaks|
-      talks|
-      meets|
-      holds|
-      hands|
-      waits
-    )\b/ix.test(text) &&
-    !/\b(
-      late grandfather|
-      late grandpa|
-      his grandfather|
-      his grandpa|
-      her grandfather|
-      her grandpa|
-      grandfather's|
-      grandpa's|
-      once waited
-    )\b/ix.test(text)
+    /\b(stands|sits|walks|enters|leaves|speaks|talks|meets|holds|hands|waits)\b/i.test(text) &&
+    !/\b(late grandfather|late grandpa|his grandfather|his grandpa|her grandfather|her grandpa|grandfather's|grandpa's|once waited)\b/i.test(text)
   ) {
     result.push("Grandfather");
   }
 
   return unique(result);
 }
+
+  
 
 // ============================================================
 // LOCATION INTELLIGENCE
@@ -497,14 +429,7 @@ function resolveLocations(beats, story) {
 
     // Returning home
     if (
-      /\b(
-        takes .* home|
-        brings .* home|
-        returns home|
-        goes home|
-        back home|
-        at home
-      )\b/ix.test(beat.text)
+      /\b(takes .* home|brings .* home|returns home|goes home|back home|at home)\b/i.test(beat.text)
     ) {
       current = "home";
     }
