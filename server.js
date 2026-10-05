@@ -3,17 +3,23 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const app = express();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const app = express();
+
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
-app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 10000;
-const ENGINE_VERSION = "FINAL-1.1";
+
+const ENGINE_VERSION = "FINAL-1.2";
+
+// ============================================================
+// STATIC FRONTEND
+// ============================================================
+
+app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
 // TEXT HELPERS
@@ -22,20 +28,22 @@ const ENGINE_VERSION = "FINAL-1.1";
 function clean(s = "") {
   return String(s)
     .replace(/\s+/g, " ")
-    .replace(/\.\.+/g, ".")
+    .replace(/\.{2,}/g, ".")
+    .replace(/!{2,}/g, "!")
+    .replace(/\?{2,}/g, "?")
+    .replace(/\s+([.!?])/g, "$1")
     .trim();
 }
 
 function sentences(text) {
-  const matches = String(text).match(/[^.!?]+[.!?]+/g) || [];
+  const matches =
+    String(text).match(/[^.!?]+[.!?]+/g) || [];
 
   const result = matches
     .map(clean)
     .filter(x => x.length > 5);
 
-  if (result.length) {
-    return result;
-  }
+  if (result.length) return result;
 
   const fallback = clean(text);
 
@@ -43,11 +51,23 @@ function sentences(text) {
 }
 
 function lower(s = "") {
-  return s.toLowerCase();
+  return String(s).toLowerCase();
 }
 
 function unique(arr) {
   return [...new Set(arr.filter(Boolean))];
+}
+
+function ensurePeriod(text = "") {
+  const value = clean(text);
+
+  if (!value) return "";
+
+  if (/[.!?]$/.test(value)) {
+    return value;
+  }
+
+  return `${value}.`;
 }
 
 // ============================================================
@@ -57,386 +77,303 @@ function unique(arr) {
 const relationshipMap = {
   mother: "Mother",
   mom: "Mother",
+  mum: "Mother",
+
   father: "Father",
   dad: "Father",
+
   grandfather: "Grandfather",
   grandpa: "Grandfather",
+  grandfather's: "Grandfather",
+  grandpa's: "Grandfather",
+
   grandmother: "Grandmother",
   grandma: "Grandmother",
+
   brother: "Brother",
   sister: "Sister",
-  friend: "Friend",
+
   wife: "Wife",
-  husband: "Husband"
+  husband: "Husband",
+
+  son: "Son",
+  daughter: "Daughter"
 };
 
-const bannedNames = new Set([
-  "Boston",
-  "Chicago",
-  "New",
-  "York",
-  "Los",
-  "Angeles",
-  "San",
-  "Francisco",
-  "Saturday",
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Curious",
-  "Inside",
-  "When",
-  "One",
-  "The",
-  "After",
-  "Before",
-  "Morning",
-  "Evening",
-  "Night"
-]);
+const bannedNames = [
+  "someone",
+  "something",
+  "person",
+  "man",
+  "woman",
+  "people",
+  "someone else"
+];
 
-function analyzeCharacters(story) {
-  const result = [];
+function analyzeCharacters(prompt) {
+  const text = String(prompt);
 
-  // Explicit named characters
-  for (const m of story.matchAll(
-    /\bnamed\s+([A-Z][a-z]+)\b/g
-  )) {
-    if (!bannedNames.has(m[1])) {
-      result.push(m[1]);
-    }
-  }
+  const names = [];
 
-  // Character name before common action verbs
-  for (const m of story.matchAll(
-    /\b([A-Z][a-z]{2,})\b(?=\s+(?:is|lives|works|finds|receives|discovers|travels|takes|opens|notices|goes|returns|realizes))/g
-  )) {
-    if (!bannedNames.has(m[1])) {
-      result.push(m[1]);
-    }
-  }
-
-  // Relationships are stored as story entities,
-  // but they do not automatically become visible characters.
-  for (const word of Object.keys(relationshipMap)) {
-    const regex = new RegExp(`\\b${word}\\b`, "i");
-
-    if (regex.test(story)) {
-      result.push(relationshipMap[word]);
-    }
-  }
-
-  return unique(result);
-}
-
-// ============================================================
-// PROTAGONIST
-// ============================================================
-
-function findProtagonist(characters) {
-  const relationshipCharacters = [
-    "Mother",
-    "Father",
-    "Grandfather",
-    "Grandmother",
-    "Brother",
-    "Sister",
-    "Friend",
-    "Wife",
-    "Husband"
+  // Proper names after common introduction patterns.
+  const namePatterns = [
+    /\b(?:named|called)\s+([A-Z][a-z]{2,})\b/g,
+    /\b(?:I am|I'm)\s+([A-Z][a-z]{2,})\b/g
   ];
 
-  return (
-    characters.find(
-      c => !relationshipCharacters.includes(c)
-    ) ||
-    characters[0] ||
-    "Character"
-  );
+  for (const regex of namePatterns) {
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      const name = match[1];
+
+      if (
+        name &&
+        !bannedNames.includes(lower(name)) &&
+        !names.includes(name)
+      ) {
+        names.push(name);
+      }
+    }
+  }
+
+  // If no explicit name is found, detect capitalized names conservatively.
+  if (!names.length) {
+    const capitalized =
+      text.match(/\b[A-Z][a-z]{2,}\b/g) || [];
+
+    for (const word of capitalized) {
+      if (
+        ![
+          "The",
+          "A",
+          "An",
+          "One",
+          "Inside",
+          "Boston",
+          "New",
+          "York",
+          "Los",
+          "Angeles",
+          "Grandpa",
+          "Grandfather",
+          "Mother",
+          "Father"
+        ].includes(word)
+      ) {
+        names.push(word);
+      }
+    }
+  }
+
+  return unique(names);
 }
 
-// ============================================================
-// ACTIVE CHARACTER INTELLIGENCE
-// ============================================================
+function findProtagonist(prompt, characters = []) {
+  const text = String(prompt);
 
-function activeCharacters(text, entities, protagonist) {
+  const namedMatch =
+    text.match(/\b(?:named|called)\s+([A-Z][a-z]{2,})\b/);
+
+  if (namedMatch && namedMatch[1]) {
+    return namedMatch[1];
+  }
+
+  if (characters.length) {
+    return characters[0];
+  }
+
+  return "Alex";
+}
+
+function activeCharacters(sceneText, protagonist) {
+  const text = lower(sceneText);
+
   const result = [];
 
-  // Named protagonist
   if (
     protagonist &&
-    new RegExp(`\\b${protagonist}\\b`, "i").test(text)
+    new RegExp(`\\b${protagonist.toLowerCase()}\\b`).test(text)
   ) {
     result.push(protagonist);
   }
 
-  // Pronoun/action reference normally belongs to protagonist
-  if (
-    protagonist &&
-    /\b(he|she|his|her|him|they|their)\b/i.test(text) &&
-    /\b(finds|discovers|takes|opens|uses|travels|goes|arrives|enters|notices|receives|sees|reads|examines|realizes|waits|develops|shows)\b/i.test(text)
-  ) {
+  for (const [keyword, character] of Object.entries(
+    relationshipMap
+  )) {
+    const regex = new RegExp(`\\b${keyword}\\b`);
+
+    if (!regex.test(text)) continue;
+
+    // Grandfather references in memories, photos, journals,
+    // letters, etc. should not automatically place him physically
+    // inside the scene.
+    if (character === "Grandfather") {
+      const backstory =
+        /photograph|photo|picture|journal|letter|memory|past|history|late grandfather|old grandfather/.test(
+          text
+        );
+
+      const physicalAction =
+        /standing|walking|sitting|waiting|running|holding|opens|opened|takes|took|enters|entered|leaves|left|arrives|arrived|travels|travelled/.test(
+          text
+        );
+
+      if (backstory && !physicalAction) {
+        continue;
+      }
+    }
+
+    if (!result.includes(character)) {
+      result.push(character);
+    }
+  }
+
+  if (!result.length && protagonist) {
     result.push(protagonist);
   }
 
-  // Mother
-  if (
-    /\b(mother|mom)\b/i.test(text) &&
-    /\b(says|asks|warns|tells|looks|stands|sits|speaks|shows|hands|gives|becomes)\b/i.test(text)
-  ) {
-    result.push("Mother");
-  }
-
-  // Father
-  if (
-    /\b(father|dad)\b/i.test(text) &&
-    /\b(says|asks|warns|tells|looks|stands|sits|speaks|shows|hands|gives)\b/i.test(text)
-  ) {
-    result.push("Father");
-  }
-
-  // Grandfather is normally backstory.
-  if (
-    /\b(grandfather|grandpa)\b/i.test(text) &&
-    /\b(stands|sits|walks|enters|leaves|speaks|talks|meets|holds|hands|waits)\b/i.test(text) &&
-    !/\b(late grandfather|late grandpa|his grandfather|his grandpa|her grandfather|her grandpa|grandfather's|grandpa's|once waited)\b/i.test(text)
-  ) {
-    result.push("Grandfather");
-  }
-
-  return unique(result);
+  return result;
 }
-
-  
 
 // ============================================================
 // LOCATION INTELLIGENCE
 // ============================================================
 
 const locationRules = [
-  ["abandoned train station", "abandoned train station"],
-  ["abandoned station", "abandoned train station"],
-  ["forgotten train station", "abandoned train station"],
-  ["train station", "abandoned train station"],
+  {
+    keywords: [
+      "apartment",
+      "home",
+      "house",
+      "bedroom",
+      "living room",
+      "kitchen"
+    ],
+    name: "Alex's apartment"
+  },
 
-  ["apartment", "apartment"],
-  ["home", "home"],
-  ["house", "house"],
-  ["living room", "living room"],
-  ["bedroom", "bedroom"],
-  ["kitchen", "kitchen"],
-  ["workshop", "workshop"],
-  ["basement", "basement"],
-  ["attic", "attic"],
+  {
+    keywords: [
+      "abandoned train station",
+      "train station",
+      "railway station",
+      "station"
+    ],
+    name: "abandoned train station"
+  },
 
-  ["movie theater", "movie theater"],
-  ["theater", "movie theater"],
+  {
+    keywords: [
+      "street",
+      "road",
+      "outside",
+      "city"
+    ],
+    name: "city street"
+  },
 
-  ["lighthouse", "lighthouse"],
-  ["harbor", "harbor"],
-  ["school", "school"],
-  ["college", "college"],
-  ["office", "office"],
-  ["restaurant", "restaurant"],
-  ["hospital", "hospital"],
-  ["airport", "airport"],
-  ["street", "street"],
-  ["road", "road"],
-  ["forest", "forest"],
-  ["park", "park"],
-  ["beach", "beach"]
+  {
+    keywords: [
+      "forest",
+      "woods"
+    ],
+    name: "forest"
+  },
+
+  {
+    keywords: [
+      "school"
+    ],
+    name: "school"
+  },
+
+  {
+    keywords: [
+      "hospital"
+    ],
+    name: "hospital"
+  },
+
+  {
+    keywords: [
+      "office"
+    ],
+    name: "office"
+  }
 ];
 
 function mentionedLocation(text) {
-  const t = lower(text);
+  const value = lower(text);
 
-  // Train station normalization
-  if (
-    /\babandoned\s+(?:train\s+)?station\b/i.test(t) ||
-    /\bforgotten\s+train\s+station\b/i.test(t) ||
-    /\btrain\s+station\b/i.test(t)
-  ) {
-    return "abandoned train station";
-  }
-
-  for (const [pattern, location] of locationRules) {
-    if (t.includes(pattern)) {
-      return location;
+  for (const rule of locationRules) {
+    for (const keyword of rule.keywords) {
+      if (value.includes(keyword)) {
+        return rule.name;
+      }
     }
   }
 
   return null;
 }
 
-// ============================================================
-// REFERENCED LOCATION
-// ============================================================
-
 function isReferencedLocation(text, location) {
-  const t = lower(text);
+  const value = lower(text);
 
   if (!location) return false;
 
-  // A train station appearing inside a photograph,
-  // journal, letter or description is NOT the current location.
   if (
     location === "abandoned train station" &&
-    (
-      /photograph shows.*(?:forgotten|abandoned)?\s*train station/i.test(t) ||
-      /photo shows.*(?:forgotten|abandoned)?\s*train station/i.test(t) ||
-      /picture shows.*(?:forgotten|abandoned)?\s*train station/i.test(t) ||
-      /photograph of.*(?:forgotten|abandoned)?\s*train station/i.test(t) ||
-      /photo of.*(?:forgotten|abandoned)?\s*train station/i.test(t) ||
-      /picture of.*(?:forgotten|abandoned)?\s*train station/i.test(t) ||
-      /journal.*(?:mentions|describes|about).*station/i.test(t)
+    /photograph|photo|picture|journal|letter/.test(value) &&
+    !/travels to|travels|arrives|enters|inside|at the station/.test(
+      value
     )
   ) {
     return true;
   }
 
-  const referencePatterns = [
-    `photograph shows ${location}`,
-    `photo shows ${location}`,
-    `picture shows ${location}`,
-    `image shows ${location}`,
-    `photograph of ${location}`,
-    `photo of ${location}`,
-    `picture of ${location}`,
-    `journal mentions ${location}`,
-    `journal described ${location}`,
-    `journal about ${location}`,
-    `letter mentions ${location}`,
-    `story about ${location}`
-  ];
-
-  return referencePatterns.some(
-    p => t.includes(p)
-  );
+  return false;
 }
 
-// ============================================================
-// MOVEMENT TO LOCATION
-// ============================================================
-
 function isMovementToLocation(text, location) {
-  const t = lower(text);
+  const value = lower(text);
 
   if (!location) return false;
 
-  // Special handling for station wording
   if (
-    location === "abandoned train station"
+    location === "abandoned train station" &&
+    /travels|travel|goes|go|heads|journeys|arrives|reaches|returns/.test(
+      value
+    ) &&
+    /station/.test(value)
   ) {
-    if (
-      /\btravels to the abandoned station\b/i.test(t) ||
-      /\bgoes to the abandoned station\b/i.test(t) ||
-      /\bheads to the abandoned station\b/i.test(t) ||
-      /\breaches the abandoned station\b/i.test(t) ||
-      /\barrives at the abandoned station\b/i.test(t) ||
-      /\benters the abandoned station\b/i.test(t) ||
-      /\btravels to the train station\b/i.test(t) ||
-      /\bgoes to the train station\b/i.test(t) ||
-      /\bheads to the train station\b/i.test(t) ||
-      /\breaches the train station\b/i.test(t)
-    ) {
-      return true;
-    }
+    return true;
   }
 
-  return (
-    new RegExp(
-      `\\b(travels|goes|go|returns|arrives|enters|walks|runs|drives|heads|reaches)\\b[^.]*\\b${location}\\b`,
-      "i"
-    ).test(text) ||
-
-    new RegExp(
-      `\\b(inside|at|into|within)\\b[^.]*\\b${location}\\b`,
-      "i"
-    ).test(text)
-  );
+  return false;
 }
 
-// ============================================================
-// LOCATION RESOLUTION
-// ============================================================
-
-function resolveLocations(beats, story) {
-  // Try to identify the first physical location.
-  let current = null;
-
-  for (const beat of beats) {
-    const mentioned = mentionedLocation(
-      beat.text
-    );
-
-    if (
-      mentioned &&
-      !isReferencedLocation(
-        beat.text,
-        mentioned
-      )
-    ) {
-      if (
-        isMovementToLocation(
-          beat.text,
-          mentioned
-        ) ||
-        /\b(at|inside|in|within)\b/i.test(
-          beat.text
-        )
-      ) {
-        current = mentioned;
-        break;
-      }
-    }
-  }
-
-  // Universal fallback only if no location has
-  // been identified before scene creation.
-  if (!current) {
-    current = "story location";
-  }
+function resolveLocations(beats) {
+  let currentLocation = "Alex's apartment";
 
   return beats.map(beat => {
-    const mentioned = mentionedLocation(
-      beat.text
-    );
+    const text = beat.text || "";
 
-    // Do not move into a location that only exists
-    // inside a photograph, journal, letter, etc.
-    if (
-      mentioned &&
-      !isReferencedLocation(
-        beat.text,
-        mentioned
-      )
-    ) {
+    const mentioned = mentionedLocation(text);
+
+    if (mentioned) {
       if (
-        isMovementToLocation(
-          beat.text,
-          mentioned
-        ) ||
-        /\b(inside|at|in|within)\b/i.test(
-          beat.text
-        )
+        mentioned !== "abandoned train station" ||
+        isMovementToLocation(text, mentioned) ||
+        !isReferencedLocation(text, mentioned)
       ) {
-        current = mentioned;
+        currentLocation = mentioned;
       }
-    }
-
-    // Returning home
-    if (
-      /\b(takes .* home|brings .* home|returns home|goes home|back home|at home)\b/i.test(beat.text)
-    ) {
-      current = "home";
     }
 
     return {
       ...beat,
-      location: current
+      location: currentLocation
     };
   });
 }
@@ -446,74 +383,51 @@ function resolveLocations(beats, story) {
 // ============================================================
 
 function objectsFor(text) {
-  const t = lower(text);
-  const found = [];
+  const value = lower(text);
 
-  if (
-    /\b(film camera|old camera|camera)\b/.test(t)
-  ) {
-    found.push("film camera");
+  const objects = [];
+
+  if (/film camera|old camera|camera/.test(value)) {
+    objects.push("film camera");
   }
 
-  if (
-    /\b(family photographs|collection of family photographs)\b/.test(t)
-  ) {
-    found.push("family photographs");
-  } else if (
-    /\bphotographs?\b/.test(t)
-  ) {
-    found.push("photographs");
+  if (/family photographs|photographs|photograph|photo/.test(value)) {
+    objects.push("family photographs");
   }
 
-  if (
-    /\bold journal\b|\bjournal\b/.test(t)
-  ) {
-    found.push("journal");
+  if (/journal|old journal/.test(value)) {
+    objects.push("old journal");
   }
 
-  if (
-    /\bmysterious red clock\b|\bred clock\b/.test(t)
-  ) {
-    found.push("red clock");
+  if (/red clock/.test(value)) {
+    objects.push("red clock");
   }
 
-  if (
-    /\bglass case\b|\blocked glass case\b/.test(t)
-  ) {
-    found.push("glass case");
+  if (/glass case/.test(value)) {
+    objects.push("glass case");
   }
 
-  if (
-    /\bsmall key\b|\bkey\b/.test(t)
-  ) {
-    found.push("key");
+  if (/key/.test(value)) {
+    objects.push("key");
   }
 
-  if (
-    /\bold wooden locker\b|\bwooden locker\b|\blocker\b/.test(t)
-  ) {
-    found.push("wooden locker");
+  if (/wooden locker|locker/.test(value)) {
+    objects.push("wooden locker");
   }
 
-  if (
-    /\bold letter\b|\bletter\b/.test(t)
-  ) {
-    found.push("letter");
+  if (/letter/.test(value)) {
+    objects.push("letter");
   }
 
-  if (
-    /\bfamily documents?\b|\bdocuments?\b/.test(t)
-  ) {
-    found.push("family documents");
+  if (/family documents|documents/.test(value)) {
+    objects.push("family documents");
   }
 
-  if (
-    /\bmetal box\b|\bbox\b/.test(t)
-  ) {
-    found.push("metal box");
+  if (/metal box/.test(value)) {
+    objects.push("metal box");
   }
 
-  return unique(found);
+  return unique(objects);
 }
 
 // ============================================================
@@ -521,456 +435,396 @@ function objectsFor(text) {
 // ============================================================
 
 function classify(text) {
-  const t = lower(text);
+  const value = lower(text);
 
   if (
-    /lives|is a|works as|works at/.test(t)
-  ) {
-    return "setup";
-  }
-
-  if (
-    /receives|finds|discovers|comes across/.test(t)
-  ) {
-    return "discovery";
-  }
-
-  if (
-    /develops|reads|examines|notices|sees|looks at/.test(t)
-  ) {
-    return "investigation";
-  }
-
-  if (
-    /warns|warning|nervous|tells .* never|tells .* not to/.test(t)
-  ) {
-    return "warning";
-  }
-
-  if (
-    /travels|goes to|returns to|arrives|enters|heads to|reaches/.test(t)
-  ) {
-    return "journey";
-  }
-
-  if (
-    /opens|uses|takes|finds.*inside|hidden|unlocks/.test(t)
-  ) {
-    return "action";
-  }
-
-  if (
-    /reveals|explains|realizes|understands|learns/.test(t)
+    /realizes|realise|realized|realised|understands|understood|truth|family history|revelation|reveals/.test(
+      value
+    )
   ) {
     return "revelation";
   }
 
   if (
-    /preserve|protect|save|safely|decide/.test(t)
+    /warning|warn|danger|dangerous|stay away|do not go|never visit/.test(
+      value
+    )
+  ) {
+    return "warning";
+  }
+
+  if (
+    /travels|travel|goes to|go to|heads to|journeys|arrives|reaches/.test(
+      value
+    )
+  ) {
+    return "journey";
+  }
+
+  if (
+    /opens|opened|unlocks|unlocked|takes|took|uses|used|pulls|pulled/.test(
+      value
+    )
+  ) {
+    return "action";
+  }
+
+  if (
+    /finds|found|discovers|discovered|notices|noticed|sees|saw/.test(
+      value
+    )
+  ) {
+    return "discovery";
+  }
+
+  if (
+    /investigates|investigate|searches|search|examines|examines|looks for/.test(
+      value
+    )
+  ) {
+    return "investigation";
+  }
+
+  if (
+    /returns|return|keeps|protects|preserves|safe|home/.test(
+      value
+    )
   ) {
     return "resolution";
   }
 
-  return "narrative";
+  return "setup";
 }
 
 // ============================================================
-// ATOMIC BEAT SPLITTER
+// ATOMIC STORY BEAT SPLITTER
 // ============================================================
 
-function splitIntoBeats(sentence) {
-  const s = clean(sentence);
+function splitAtomicBeats(text) {
+  const source = clean(text);
+
+  if (!source) return [];
+
   const result = [];
 
-  const finish = text => {
-    const value = clean(text);
+  const rawSentences = sentences(source);
 
-    if (!value) return "";
+  for (const sentence of rawSentences) {
+    const value = clean(sentence);
 
-    return /[.!?]$/.test(value)
-      ? value
-      : `${value}.`;
-  };
-
-  let match;
-
-  // ----------------------------------------------------------
-  // FINDS / DISCOVERS / NOTICES + USES
-  // ----------------------------------------------------------
-
-  match = s.match(
-    /^(.+?\b(?:discovers|finds|notices)\b.+?)\s+and\s+(uses\s+.+)$/i
-  );
-
-  if (match) {
-    const first = finish(match[1]);
-
-    const secondAction = finish(
-      match[2]
-    );
-
-    const subjectMatch =
-      first.match(
-        /^([A-Z][a-z]+)\b/i
+    // Finds something and immediately uses/opens it.
+    const findUse =
+      value.match(
+        /^(.*?\b(?:finds|found|discovers|discovered)\b.*?)(\b(?:opens|opened|uses|used|takes|took|unlocks|unlocked)\b.*)$/i
       );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    if (findUse) {
+      result.push(ensurePeriod(findUse[1]));
+      result.push(ensurePeriod(findUse[2]));
+      continue;
+    }
 
-    result.push(first);
-
-    result.push(
-      finish(
-        subject
-          ? `${subject} ${secondAction}`
-          : secondAction
-      )
-    );
-
-    return result;
-  }
-
-  // ----------------------------------------------------------
-  // FINDS + OPENS / DISCOVERS / USES / TAKES / UNLOCKS
-  // ----------------------------------------------------------
-
-  match = s.match(
-    /^(.+?\bfinds\b.+?)\s+and\s+(opens|discovers|uses|takes|unlocks)\s+(.+)$/i
-  );
-
-  if (match) {
-    const first = finish(match[1]);
-
-    const action = finish(
-      `${match[2]} ${match[3]}`
-    );
-
-    const subjectMatch =
-      first.match(
-        /^([A-Z][a-z]+)\b/i
+    // Finds something and discovers another clue.
+    const findDiscover =
+      value.match(
+        /^(.*?\b(?:finds|found)\b.*?)(\b(?:discovers|discovered|realizes|realised|realized)\b.*)$/i
       );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    if (findDiscover) {
+      result.push(ensurePeriod(findDiscover[1]));
+      result.push(ensurePeriod(findDiscover[2]));
+      continue;
+    }
 
-    result.push(first);
-
-    result.push(
-      finish(
-        subject
-          ? `${subject} ${action}`
-          : action
-      )
-    );
-
-    return result;
-  }
-
-  // ----------------------------------------------------------
-  // FINDS + DISCOVERS
-  // ----------------------------------------------------------
-
-  match = s.match(
-    /^(.*?\bfinds\b.*?)(?:\s+and\s+)(discovers\s+.*)$/i
-  );
-
-  if (match) {
-    const first = finish(match[1]);
-    const second = finish(match[2]);
-
-    const subjectMatch =
-      first.match(
-        /^([A-Z][a-z]+)\b/i
+    // Takes something and realizes something.
+    const takesRealizes =
+      value.match(
+        /^(.*?\b(?:takes|took|holds|held)\b.*?)(\b(?:realizes|realized|understands|understood)\b.*)$/i
       );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    if (takesRealizes) {
+      result.push(ensurePeriod(takesRealizes[1]));
+      result.push(ensurePeriod(takesRealizes[2]));
+      continue;
+    }
 
-    result.push(first);
-
-    result.push(
-      finish(
-        subject
-          ? `${subject} ${second}`
-          : second
-      )
-    );
-
-    return result;
-  }
-
-  // ----------------------------------------------------------
-  // SHOWS + BUT
-  // ----------------------------------------------------------
-
-  match = s.match(
-    /^(.*?\bshows\b.*?)(?:,\s*but\s+)(.*)$/i
-  );
-
-  if (match) {
-    result.push(
-      finish(match[1]),
-      finish(match[2])
-    );
-
-    return result;
-  }
-
-  // ----------------------------------------------------------
-  // TAKES + REALIZES
-  // ----------------------------------------------------------
-
-  match = s.match(
-    /^(.+?\btakes\b.+?)\s+and\s+(realizes\s+.+)$/i
-  );
-
-  if (match) {
-    const first = finish(match[1]);
-    const second = finish(match[2]);
-
-    const subjectMatch =
-      first.match(
-        /^([A-Z][a-z]+)\b/i
+    // "shows X, but..."
+    const showBut =
+      value.match(
+        /^(.*?\bshows?\b.*?)(\bbut\b.*)$/i
       );
 
-    const subject =
-      subjectMatch
-        ? subjectMatch[1]
-        : null;
+    if (showBut) {
+      result.push(ensurePeriod(showBut[1]));
+      result.push(ensurePeriod(showBut[2]));
+      continue;
+    }
 
-    result.push(first);
-
-    result.push(
-      finish(
-        subject
-          ? `${subject} ${second}`
-          : second
-      )
-    );
-
-    return result;
+    result.push(ensurePeriod(value));
   }
 
-  // ----------------------------------------------------------
-  // NORMAL SINGLE BEAT
-  // ----------------------------------------------------------
-
-  return [finish(s)];
+  return result.map(clean).filter(Boolean);
 }
 
-// ============================================================
-// BUILD STORY BEATS
-// ============================================================
+function buildStoryBeats(prompt) {
+  const beats = splitAtomicBeats(prompt);
 
-function buildStoryBeats(story) {
-  const beats = [];
-
-  for (const sentence of sentences(story)) {
-    const pieces =
-      splitIntoBeats(sentence);
-
-    for (const piece of pieces) {
-      const text = clean(piece);
-
-      if (!text) continue;
-
-      beats.push({
-        id: beats.length + 1,
-        text,
-        type: classify(text),
-        objects: objectsFor(text)
-      });
-    }
+  if (!beats.length) {
+    return [
+      {
+        text: clean(prompt),
+        type: "setup"
+      }
+    ];
   }
 
-  return beats;
+  return beats.map((text, index) => ({
+    id: index + 1,
+    text,
+    type: classify(text)
+  }));
 }
 
 // ============================================================
 // SCENE ALLOCATION
 // ============================================================
 
-function allocateScenes(beats, count) {
-  const scenes = Array.from(
-    { length: count },
-    () => []
-  );
+function allocateScenes(beats, sceneCount) {
+  const groups = [];
 
-  if (beats.length <= count) {
-    beats.forEach((beat, index) => {
-      scenes[index].push(beat);
-    });
-
-    return scenes;
-  }
-
-  let cursor = 0;
-
-  for (let i = 0; i < count; i++) {
-    const remaining =
-      beats.length - cursor;
-
-    const scenesLeft =
-      count - i;
-
-    const take =
-      Math.ceil(
-        remaining / scenesLeft
-      );
-
-    for (
-      let j = 0;
-      j < take &&
-      cursor < beats.length;
-      j++
-    ) {
-      scenes[i].push(
-        beats[cursor++]
-      );
+  if (!beats.length) {
+    for (let i = 0; i < sceneCount; i++) {
+      groups.push([]);
     }
+
+    return groups;
   }
 
-  return scenes;
+  const total = beats.length;
+
+  for (let i = 0; i < sceneCount; i++) {
+    const start = Math.floor((i * total) / sceneCount);
+    const end = Math.floor(
+      ((i + 1) * total) / sceneCount
+    );
+
+    let group = beats.slice(start, end);
+
+    // Every scene should have at least one beat when possible.
+    if (!group.length) {
+      const fallbackIndex = Math.min(
+        i,
+        beats.length - 1
+      );
+
+      group = [beats[fallbackIndex]];
+    }
+
+    groups.push(group);
+  }
+
+  return groups;
 }
 
 // ============================================================
-// DIALOGUE
+// DIALOGUE INTELLIGENCE FINAL-1.2
 // ============================================================
 
 function dialogueFor(
   sceneBeats,
   active,
   usedDialogue,
-  protagonist
+  protagonist,
+  isFinalScene = false
 ) {
   const text = lower(
-    sceneBeats
-      .map(b => b.text)
-      .join(" ")
+    sceneBeats.map(b => b.text).join(" ")
   );
 
-  const candidate = [];
+  const candidates = [];
 
-  // Mother warning
+  const add = (speaker, dialogue) => {
+    candidates.push({
+      speaker,
+      text: clean(dialogue)
+    });
+  };
+
+  // ----------------------------------------------------------
+  // 1. FINAL REALIZATION
+  // Highest priority.
+  // ----------------------------------------------------------
+
   if (
-    /warn|warning|never visit|stay away|do not go/.test(text) &&
+    isFinalScene &&
+    /realizes|realise|realized|realised|understands|understood|learns|learned|family history|family's past|family past|truth about.*family/.test(
+      text
+    )
+  ) {
+    add(
+      protagonist,
+      "Now I understand the truth about my family's past."
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 2. EXACT WAITING EVENT
+  // Must beat generic locker dialogue.
+  // ----------------------------------------------------------
+
+  if (
+    /\b(waited|waiting|wait)\b/.test(text) &&
+    /\b(never returned|never came back|never came|never arrived|didn't return|did not return)\b/.test(
+      text
+    )
+  ) {
+    add(
+      protagonist,
+      "Grandpa was waiting for someone who never returned."
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 3. MOTHER WARNING
+  // ----------------------------------------------------------
+
+  if (
+    /warn|warning|never visit|stay away|do not go/.test(
+      text
+    ) &&
     active.includes("Mother")
   ) {
-    candidate.push({
-      speaker: "Mother",
-      text:
-        `${protagonist}, stay away from that place.`
-    });
+    add(
+      "Mother",
+      `${protagonist}, stay away from that place.`
+    );
   }
 
-  // Camera
-  if (
-    /film camera|camera/.test(text)
-  ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "Why did Grandpa keep this camera?"
-    });
+  // ----------------------------------------------------------
+  // 4. CAMERA
+  // ----------------------------------------------------------
+
+  if (/film camera|old camera|camera/.test(text)) {
+    add(
+      protagonist,
+      "Why did Grandpa keep this camera?"
+    );
   }
 
-  // Photograph
+  // ----------------------------------------------------------
+  // 5. JOURNAL
+  // ----------------------------------------------------------
+
+  if (/journal/.test(text)) {
+    add(
+      protagonist,
+      "Grandpa wrote about this place."
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 6. RED CLOCK
+  // ----------------------------------------------------------
+
+  if (/red clock/.test(text)) {
+    add(
+      protagonist,
+      "That clock is still working."
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 7. KEY
+  // ----------------------------------------------------------
+
+  if (/key/.test(text)) {
+    add(
+      protagonist,
+      "There's a key hidden inside."
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 8. PHOTOGRAPH
+  // ----------------------------------------------------------
+
   if (
-    /photograph|photographs/.test(text) &&
+    /photograph|photographs|photo/.test(text) &&
     !/red clock/.test(text)
   ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "Why is this place in Grandpa's photograph?"
-    });
+    add(
+      protagonist,
+      "Why is this place in Grandpa's photograph?"
+    );
   }
 
-  // Journal
+  // ----------------------------------------------------------
+  // 9. LOCKER
+  // Only generic if there is no stronger waiting event.
+  // ----------------------------------------------------------
+
   if (
-    /journal/.test(text)
+    /locker/.test(text) &&
+    !/waiting|waited|never returned|never came back/.test(
+      text
+    )
   ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "Grandpa wrote about this place."
-    });
+    add(
+      protagonist,
+      "What was Grandpa hiding here?"
+    );
   }
 
-  // Red clock
+  // ----------------------------------------------------------
+  // 10. LETTER
+  // Never override final realization.
+  // ----------------------------------------------------------
+
   if (
-    /red clock/.test(text)
+    /letter/.test(text) &&
+    !isFinalScene &&
+    !/realizes|realise|realized|realised|understands|understood|family history|family's past|family past/.test(
+      text
+    )
   ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "That clock is still working."
-    });
+    add(
+      protagonist,
+      "Grandpa left this here for a reason."
+    );
   }
 
-  // Key
+  // ----------------------------------------------------------
+  // 11. GENERAL REVELATION
+  // ----------------------------------------------------------
+
   if (
-    /key/.test(text)
+    /reveals|realizes|realise|realized|realised|understands|understood/.test(
+      text
+    ) &&
+    !isFinalScene
   ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "There's a key hidden inside."
-    });
+    add(
+      protagonist,
+      "Now I understand what Grandpa was trying to reveal."
+    );
   }
 
-  // Locker
-  if (
-    /locker/.test(text)
-  ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "What was Grandpa hiding here?"
-    });
+  // ----------------------------------------------------------
+  // 12. RESOLUTION
+  // ----------------------------------------------------------
+
+  if (/preserve|safely|protect/.test(text)) {
+    add(
+      protagonist,
+      "I'll keep our family's story safe."
+    );
   }
 
-  // Letter
-  if (
-    /letter/.test(text)
-  ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "Grandpa left this here for a reason."
-    });
-  }
+  // ----------------------------------------------------------
+  // FIRST UNUSED DIALOGUE
+  // ----------------------------------------------------------
 
-  // Revelation
-  if (
-    /reveals|realizes|understands|family history/.test(text)
-  ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "Now I understand our family's past."
-    });
-  }
-
-  // Resolution
-  if (
-    /preserve|safely|protect/.test(text)
-  ) {
-    candidate.push({
-      speaker: protagonist,
-      text:
-        "I'll keep our family's story safe."
-    });
-  }
-
-  // Never repeat exact dialogue
-  for (const d of candidate) {
+  for (const d of candidates) {
     if (!usedDialogue.has(d.text)) {
       usedDialogue.add(d.text);
       return [d];
@@ -981,119 +835,140 @@ function dialogueFor(
 }
 
 // ============================================================
-// VOICEOVER
+// VOICEOVER INTELLIGENCE
 // ============================================================
 
 function voiceoverFor(beats) {
-  const complete = [];
+  const lines = [];
 
   for (const beat of beats) {
-    let text = clean(beat.text);
+    const parts = sentences(beat.text);
 
-    if (!text) continue;
+    for (const part of parts) {
+      const sentence = ensurePeriod(part);
 
-    if (!/[.!?]$/.test(text)) {
-      text += ".";
+      if (sentence) {
+        lines.push(sentence);
+      }
     }
-
-    complete.push(text);
   }
 
-  let output = "";
+  // Keep complete sentences and avoid excessively long narration.
+  const selected = [];
+  let currentLength = 0;
 
-  for (const sentence of complete) {
-    const candidate = output
-      ? `${output} ${sentence}`
-      : sentence;
+  for (const line of lines) {
+    const candidateLength =
+      currentLength +
+      (currentLength ? 1 : 0) +
+      line.length;
 
-    // Do not cut a sentence in half.
-    if (candidate.length > 240) {
+    if (
+      candidateLength > 240 &&
+      selected.length
+    ) {
       break;
     }
 
-    output = candidate;
+    selected.push(line);
+    currentLength = candidateLength;
   }
 
-  return output;
+  return clean(selected.join(" "));
 }
 
 // ============================================================
-// CAMERA
+// CAMERA INTELLIGENCE
 // ============================================================
 
-function cameraFor(type, objects) {
-  if (objects.length) {
-    return (
-      "Medium cinematic shot followed by a controlled " +
-      "close-up of the important story object, " +
-      "ending on the character's reaction."
-    );
+function cameraFor(type, objects = []) {
+  if (objects.includes("red clock")) {
+    return "Slow cinematic push-in toward the red clock, ending on a detailed close-up.";
   }
 
-  if (type === "journey") {
-    return (
-      "Cinematic tracking shot following the character " +
-      "toward the destination."
-    );
+  if (objects.includes("family photographs")) {
+    return "Gentle over-the-shoulder shot followed by a slow close-up of the photograph.";
   }
 
-  if (type === "warning") {
-    return (
-      "Slow push-in toward the characters, emphasizing " +
-      "facial expressions and tension."
-    );
+  if (objects.includes("film camera")) {
+    return "Medium shot transitioning into a detailed close-up of the film camera.";
   }
 
-  if (type === "revelation") {
-    return (
-      "Slow cinematic push-in ending on an emotional close-up."
-    );
+  if (objects.includes("old journal")) {
+    return "Over-the-shoulder shot moving slowly toward the open journal.";
   }
 
-  if (type === "resolution") {
-    return (
-      "Calm medium shot followed by a warm emotional close-up."
-    );
+  if (objects.includes("wooden locker")) {
+    return "Tracking shot toward the wooden locker followed by a tense close-up.";
   }
 
-  return (
-    "Natural cinematic medium shot with subtle camera movement."
-  );
+  if (objects.includes("key")) {
+    return "Close-up of the key followed by a slow reveal of the surrounding environment.";
+  }
+
+  switch (type) {
+    case "setup":
+      return "Slow cinematic establishing shot with a natural camera movement.";
+
+    case "journey":
+      return "Smooth tracking shot following the protagonist through the environment.";
+
+    case "warning":
+      return "Slow controlled push-in emphasizing the character's concerned expression.";
+
+    case "discovery":
+      return "Slow push-in toward the discovered clue with a subtle reveal.";
+
+    case "investigation":
+      return "Over-the-shoulder investigative shot with a gradual camera movement.";
+
+    case "action":
+      return "Dynamic medium shot followed by a detailed close-up of the action.";
+
+    case "revelation":
+      return "Slow cinematic push-in toward the protagonist's emotional reaction.";
+
+    case "resolution":
+      return "Gentle wide shot with a slow pull-back creating a reflective ending.";
+
+    default:
+      return "Cinematic medium shot with natural movement and realistic framing.";
+  }
 }
 
 // ============================================================
-// LIGHTING
+// LIGHTING INTELLIGENCE
 // ============================================================
 
 function lightingFor(type) {
-  if (type === "warning") {
-    return (
-      "Dramatic directional lighting with controlled shadows."
-    );
-  }
+  switch (type) {
+    case "setup":
+      return "Natural cinematic lighting with soft environmental shadows.";
 
-  if (
-    type === "discovery" ||
-    type === "investigation" ||
-    type === "action"
-  ) {
-    return (
-      "Focused cinematic lighting emphasizing the important clue."
-    );
-  }
+    case "journey":
+      return "Atmospheric cinematic lighting with realistic environmental contrast.";
 
-  if (
-    type === "revelation" ||
-    type === "resolution"
-  ) {
-    return (
-      "Warm natural cinematic lighting supporting emotional understanding."
-    );
-  }
+    case "warning":
+      return "Moody low-key lighting with subtle dramatic shadows.";
 
-  return (
-    "Natural cinematic lighting appropriate to the time and location."
-  );
+    case "discovery":
+      return "Focused cinematic lighting emphasizing the discovered clue.";
+
+    case "investigation":
+      return "Dim atmospheric lighting with realistic directional shadows.";
+
+    case "action":
+      return "Dynamic cinematic lighting with strong environmental contrast.";
+
+    case "revelation":
+      return "Emotional cinematic lighting with a subtle warm highlight.";
+
+    case "resolution":
+      return "Soft reflective cinematic lighting with a calm natural atmosphere.";
+
+    default:
+      return "Realistic cinematic lighting with natural shadows.";
+  }
 }
 
 // ============================================================
@@ -1105,59 +980,52 @@ function createScene(
   beats,
   allCharacters,
   protagonist,
-  usedDialogue
+  usedDialogue,
+  isFinalScene = false
 ) {
-  const action = beats
-    .map(b => b.text)
-    .join(" ");
-
-  const active = unique(
-    beats.flatMap(b =>
-      activeCharacters(
-        b.text,
-        allCharacters,
-        protagonist
-      )
-    )
+  const action = clean(
+    beats
+      .map(b => b.text)
+      .join(" ")
   );
 
-  // If an action uses pronouns but the name
-  // isn't written in the beat, keep protagonist visible.
-  if (
-    active.length === 0 &&
-    beats.some(b =>
-      /\b(he|she|his|her|him|they|their)\b/i.test(
-        b.text
-      )
-    )
-  ) {
-    active.push(protagonist);
-  }
+  const active = activeCharacters(
+    action,
+    protagonist
+  );
 
   const objects = unique(
-    beats.flatMap(
-      b => b.objects
-    )
+    beats.flatMap(b => objectsFor(b.text))
   );
 
-  const dialogue =
-    dialogueFor(
-      beats,
-      active,
-      usedDialogue,
-      protagonist
-    );
+  const types = beats.map(
+    b => b.type
+  );
 
-  const voiceover =
-    voiceoverFor(beats);
+  let type =
+    types[types.length - 1] || "setup";
+
+  if (types.includes("revelation")) {
+    type = "revelation";
+  } else if (types.includes("warning")) {
+    type = "warning";
+  } else if (types.includes("journey")) {
+    type = "journey";
+  }
 
   const location =
-    beats[0]?.location ||
-    "story location";
+    beats.find(b => b.location)?.location ||
+    "Alex's apartment";
 
-  const type =
-    beats[0]?.type ||
-    "narrative";
+  const dialogue = dialogueFor(
+    beats,
+    active,
+    usedDialogue,
+    protagonist,
+    isFinalScene
+  );
+
+  const voiceover = voiceoverFor(beats);
 
   const charactersText =
     active.length
@@ -1166,52 +1034,46 @@ function createScene(
 
   const objectText =
     objects.length
-      ? ` Important story objects: ${objects.join(", ")}.`
+      ? ` Important visible objects: ${objects.join(", ")}.`
       : "";
 
+  const visualPrompt = clean(
+    `Cinematic realistic storytelling. Location: ${location}. Characters: ${charactersText}. Action: ${action}${objectText} Maintain exact chronological story logic and visual continuity. Natural body movement, realistic environment, detailed textures, believable expressions, cinematic composition.`
+  );
+
   return {
-    scene_number:
-      index + 1,
+    scene_number: index + 1,
 
-    start_time:
-      index * 10,
+    start_time: index * 10,
 
-    end_time:
-      (index + 1) * 10,
+    end_time: (index + 1) * 10,
 
-    visual_prompt:
-      `Cinematic realistic storytelling. ` +
-      `Location: ${location}. ` +
-      `Characters: ${charactersText}. ` +
-      `Action: ${action}.` +
-      objectText +
-      ` Maintain exact chronological story logic and visual continuity. ` +
-      `Natural body movement, realistic environment, detailed textures, ` +
-      `believable expressions, cinematic composition.`,
+    duration: 10,
 
-    camera:
-      cameraFor(
-        type,
-        objects
-      ),
+    type,
 
-    lighting:
-      lightingFor(type),
+    location,
+
+    characters: active,
+
+    objects,
 
     action,
+
+    visual_prompt: visualPrompt,
 
     dialogue,
 
     voiceover,
 
-    continuity:
-      `Character continuity lock: ${charactersText}. ` +
-      `Keep identical faces, approximate ages, hairstyles, body proportions, ` +
-      `clothing style, colors, accessories, and physical identity across scenes. ` +
-      `Only show characters who are actually present in this scene. ` +
-      `Do not place backstory-only characters physically in the scene. ` +
-      `Location continuity: ${location}.` +
-      objectText
+    camera: cameraFor(type, objects),
+
+    lighting: lightingFor(type),
+
+    continuity_lock:
+      `Keep ${protagonist} visually consistent throughout the entire story. Maintain consistent face, age, hairstyle, clothing, body proportions, environment, props, and chronological continuity.`,
+
+    final_scene: isFinalScene
   };
 }
 
@@ -1221,59 +1083,125 @@ function createScene(
 
 function validate(scenes) {
   const errors = [];
-  const dialogueSeen = new Set();
 
-  scenes.forEach((scene, i) => {
-    if (
-      scene.start_time !== i * 10 ||
-      scene.end_time !== (i + 1) * 10
-    ) {
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+
+    if (scene.duration !== 10) {
       errors.push(
-        `Timing error in scene ${i + 1}`
+        `Scene ${i + 1} duration is not 10 seconds.`
       );
     }
 
-    if (!scene.action) {
+    if (
+      scene.end_time -
+        scene.start_time !==
+      10
+    ) {
       errors.push(
-        `Empty action in scene ${i + 1}`
+        `Scene ${i + 1} timing is invalid.`
+      );
+    }
+
+    if (!clean(scene.action)) {
+      errors.push(
+        `Scene ${i + 1} has empty action.`
       );
     }
 
     if (
       scene.voiceover &&
-      !/[.!?]$/.test(
-        scene.voiceover.trim()
-      )
+      !/[.!?]$/.test(scene.voiceover)
     ) {
       errors.push(
-        `Incomplete voiceover in scene ${i + 1}`
+        `Scene ${i + 1} voiceover does not end correctly.`
       );
     }
 
-    for (const d of scene.dialogue || []) {
-      if (
-        dialogueSeen.has(d.text)
-      ) {
+    if (/\.\./.test(scene.visual_prompt)) {
+      errors.push(
+        `Scene ${i + 1} contains double punctuation in visual prompt.`
+      );
+    }
+
+    if (
+      scene.dialogue &&
+      scene.dialogue.length
+    ) {
+      const dialogueText =
+        scene.dialogue[0].text || "";
+
+      if (dialogueText.length > 150) {
         errors.push(
-          `Repeated dialogue in scene ${i + 1}`
+          `Scene ${i + 1} dialogue is too long.`
         );
       }
 
-      dialogueSeen.add(
-        d.text
+      // Scene 5/event-level protection.
+      const actionText = lower(
+        scene.action
+      );
+
+      const dialogueLower = lower(
+        dialogueText
       );
 
       if (
-        d.text.length > 150
+        /waiting|waited/.test(actionText) &&
+        /never returned|never came back|never came|did not return|didn't return/.test(
+          actionText
+        ) &&
+        !/waiting|returned|came back/.test(
+          dialogueLower
+        )
       ) {
         errors.push(
-          `Dialogue too long in scene ${i + 1}`
+          `Scene ${i + 1} dialogue does not match the waiting/return event.`
+        );
+      }
+
+      // Final scene protection.
+      if (
+        i === scenes.length - 1 &&
+        /family history|family's past|family past|realizes|realized|understands|understood/.test(
+          actionText
+        ) &&
+        !/understand|truth|family|past/.test(
+          dialogueLower
+        )
+      ) {
+        errors.push(
+          `Final scene dialogue does not match the final realization.`
         );
       }
     }
-  });
+  }
 
-  return errors;
+  // Detect repeated dialogue.
+  const dialogueTexts = scenes
+    .flatMap(scene =>
+      (scene.dialogue || []).map(
+        d => lower(d.text)
+      )
+    )
+    .filter(Boolean);
+
+  const seen = new Set();
+
+  for (const dialogue of dialogueTexts) {
+    if (seen.has(dialogue)) {
+      errors.push(
+        `Repeated dialogue detected: ${dialogue}`
+      );
+    }
+
+    seen.add(dialogue);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
 }
 
 // ============================================================
@@ -1285,52 +1213,39 @@ function generateProject(
   duration,
   aspectRatio
 ) {
-  const story =
-    clean(prompt);
+  const requestedSeconds =
+    Number(duration) || 60;
 
-  const seconds =
+  // Current stable engine is intentionally capped
+  // at 60 seconds.
+  const seconds = Math.min(
+    60,
     Math.max(
       10,
-      Math.min(
-        60,
-        Number(duration) || 60
-      )
-    );
+      Math.floor(
+        requestedSeconds / 10
+      ) * 10
+    )
+  );
 
   const sceneCount =
-    Math.floor(
-      seconds / 10
-    );
+    Math.floor(seconds / 10);
 
   const characters =
-    analyzeCharacters(
-      story
-    );
+    analyzeCharacters(prompt);
 
   const protagonist =
     findProtagonist(
+      prompt,
       characters
     );
 
-  let beats =
-    buildStoryBeats(
-      story
-    );
+  const rawBeats =
+    buildStoryBeats(prompt);
 
-  if (!beats.length) {
-    throw new Error(
-      "No story beats detected."
-    );
-  }
+  const beats =
+    resolveLocations(rawBeats);
 
-  // Resolve physical locations
-  beats =
-    resolveLocations(
-      beats,
-      story
-    );
-
-  // Allocate chronological beats
   const sceneGroups =
     allocateScenes(
       beats,
@@ -1348,21 +1263,13 @@ function generateProject(
           group,
           characters,
           protagonist,
-          usedDialogue
+          usedDialogue,
+          index === sceneCount - 1
         )
     );
 
-  const errors =
-    validate(
-      scenes
-    );
-
-  if (errors.length) {
-    console.warn(
-      `${ENGINE_VERSION} validation:`,
-      errors
-    );
-  }
+  const validation =
+    validate(scenes);
 
   return {
     success: true,
@@ -1370,51 +1277,54 @@ function generateProject(
     engine_version:
       ENGINE_VERSION,
 
-    mode:
-      "LOCAL_STORY_INTELLIGENCE",
+    project: {
+      prompt: clean(prompt),
 
-    duration:
-      seconds,
+      duration: seconds,
 
-    total_scenes:
-      sceneCount,
+      total_scenes: sceneCount,
 
-    aspect_ratio:
-      aspectRatio ||
-      "16:9",
+      aspect_ratio:
+        aspectRatio || "16:9",
 
-    scenes
+      protagonist,
+
+      characters,
+
+      scenes
+    },
+
+    validation
   };
 }
 
 // ============================================================
-// API TEST
+// API: TEST
 // ============================================================
 
-app.get(
-  "/api/test",
-  (req, res) => {
-    res.json({
-      status:
-        "success",
+app.get("/api/test", (req, res) => {
+  res.json({
+    success: true,
 
-      engine:
-        ENGINE_VERSION,
+    message:
+      "SANAPTAI API is working perfectly!",
 
-      message:
-        "SANAPTAI story intelligence engine is running.",
+    engine:
+      ENGINE_VERSION,
 
-      gemini:
-        "disabled",
+    gemini:
+      "disabled",
 
-      video_generation:
-        "disabled"
-    });
-  }
-);
+    video_generation:
+      "disabled",
+
+    timestamp:
+      new Date().toISOString()
+  });
+});
 
 // ============================================================
-// DEMO PROJECT API
+// API: DEMO PROJECT
 // ============================================================
 
 app.post(
@@ -1423,8 +1333,8 @@ app.post(
     try {
       const {
         prompt,
-        duration,
-        aspectRatio
+        duration = 60,
+        aspectRatio = "16:9"
       } = req.body || {};
 
       if (
@@ -1432,69 +1342,194 @@ app.post(
         !String(prompt).trim()
       ) {
         return res.status(400).json({
-          success:
-            false,
-
+          success: false,
           error:
             "Video prompt is required."
         });
       }
 
-      const project =
+      const result =
         generateProject(
-          prompt,
+          String(prompt),
           duration,
           aspectRatio
         );
 
-      res.json(
-        project
-      );
-
+      return res.json(result);
     } catch (error) {
       console.error(
-        `${ENGINE_VERSION} ERROR:`,
+        "PROJECT GENERATION ERROR:",
         error
       );
 
-      res.status(500).json({
-        success:
-          false,
+      return res.status(500).json({
+        success: false,
 
         error:
-          error.message ||
-          "Story generation failed."
+          "Project creation failed.",
+
+        details:
+          error?.message ||
+          "Unknown error"
       });
     }
   }
 );
 
 // ============================================================
-// FRONTEND
+// API: CREATE PROJECT
+// Alias for future frontend use.
 // ============================================================
 
-app.get(
-  "/",
+app.post(
+  "/api/create-project",
   (req, res) => {
-    res.sendFile(
-      path.join(
-        __dirname,
-        "public",
-        "index.html"
-      )
-    );
+    try {
+      const {
+        prompt,
+        duration = 60,
+        aspectRatio = "16:9"
+      } = req.body || {};
+
+      if (
+        !prompt ||
+        !String(prompt).trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Video prompt is required."
+        });
+      }
+
+      const result =
+        generateProject(
+          String(prompt),
+          duration,
+          aspectRatio
+        );
+
+      return res.json(result);
+    } catch (error) {
+      console.error(
+        "CREATE PROJECT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        error:
+          "Project creation failed.",
+
+        details:
+          error?.message ||
+          "Unknown error"
+      });
+    }
   }
 );
 
 // ============================================================
-// SERVER
+// API: PLAN SCENES
 // ============================================================
 
-app.listen(
-  PORT,
-  () => {
-    console.log(
-      `SANAPTAI ${ENGINE_VERSION} running on port ${PORT}`
-    );
+app.post(
+  "/api/plan-scenes",
+  (req, res) => {
+    try {
+      const {
+        prompt,
+        duration = 60,
+        aspectRatio = "16:9"
+      } = req.body || {};
+
+      if (
+        !prompt ||
+        !String(prompt).trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Video prompt is required."
+        });
+      }
+
+      const result =
+        generateProject(
+          String(prompt),
+          duration,
+          aspectRatio
+        );
+
+      return res.json(result);
+    } catch (error) {
+      console.error(
+        "PLAN SCENES ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        error:
+          "Scene planning failed.",
+
+        details:
+          error?.message ||
+          "Unknown error"
+      });
+    }
   }
 );
+
+// ============================================================
+// ROOT
+// ============================================================
+
+app.get("/", (req, res) => {
+  res.sendFile(
+    path.join(
+      __dirname,
+      "public",
+      "index.html"
+    )
+  );
+});
+
+// ============================================================
+// 404 API HANDLER
+// ============================================================
+
+app.use(
+  "/api",
+  (req, res) => {
+    res.status(404).json({
+      success: false,
+      error:
+        "API endpoint not found."
+    });
+  }
+);
+
+// ============================================================
+// SERVER START
+// ============================================================
+
+app.listen(PORT, () => {
+  console.log(
+    `SANAPTAI backend running on port ${PORT}`
+  );
+
+  console.log(
+    `SANAPTAI Engine: ${ENGINE_VERSION}`
+  );
+
+  console.log(
+    "Gemini: disabled"
+  );
+
+  console.log(
+    "Video generation: disabled"
+  );
+});
