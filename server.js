@@ -113,13 +113,19 @@ function parseDuration(value) {
   if (text.includes("minute")) {
     return Math.max(
       10,
-      Math.min(1200, Math.round(number * 60 / 10) * 10)
+      Math.min(
+        1200,
+        Math.round((number * 60) / 10) * 10
+      )
     );
   }
 
   return Math.max(
     10,
-    Math.min(1200, Math.floor(number / 10) * 10)
+    Math.min(
+      1200,
+      Math.floor(number / 10) * 10
+    )
   );
 }
 
@@ -230,7 +236,10 @@ function activeCharacters(sceneText, protagonist) {
     relationshipMap
   )) {
     const regex = new RegExp(
-      `\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`
+      `\\b${keyword.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      )}\\b`
     );
 
     if (!regex.test(text)) {
@@ -311,23 +320,17 @@ const locationRules = [
   },
 
   {
-    keywords: [
-      "school"
-    ],
+    keywords: ["school"],
     name: "school"
   },
 
   {
-    keywords: [
-      "hospital"
-    ],
+    keywords: ["hospital"],
     name: "hospital"
   },
 
   {
-    keywords: [
-      "office"
-    ],
+    keywords: ["office"],
     name: "office"
   }
 ];
@@ -528,12 +531,6 @@ function allocateScenes(beats, sceneCount) {
     return groups;
   }
 
-  /*
-   * For short stories, keep beats distributed naturally.
-   * For long videos, cycle through beats without losing
-   * chronological order.
-   */
-
   for (let i = 0; i < sceneCount; i++) {
     const start = Math.floor(
       (i * beats.length) / sceneCount
@@ -668,51 +665,35 @@ function voiceoverFor(
     return "The truth finally connected the missing pieces of his family's past.";
   }
 
-  if (
-    sceneType === "setup"
-  ) {
+  if (sceneType === "setup") {
     return "He had no idea this ordinary moment would change everything.";
   }
 
-  if (
-    sceneType === "discovery"
-  ) {
+  if (sceneType === "discovery") {
     return "The discovery gave him a reason to keep searching.";
   }
 
-  if (
-    sceneType === "investigation"
-  ) {
+  if (sceneType === "investigation") {
     return "The more he searched, the deeper the mystery became.";
   }
 
-  if (
-    sceneType === "journey"
-  ) {
+  if (sceneType === "journey") {
     return "Determined to find answers, he followed the only clue he had.";
   }
 
-  if (
-    sceneType === "warning"
-  ) {
+  if (sceneType === "warning") {
     return "For the first time, he realized that he might be in danger.";
   }
 
-  if (
-    sceneType === "action"
-  ) {
+  if (sceneType === "action") {
     return "Every step brought him closer to the truth.";
   }
 
-  if (
-    sceneType === "revelation"
-  ) {
+  if (sceneType === "revelation") {
     return "What he discovered changed everything he believed.";
   }
 
-  if (
-    sceneType === "resolution"
-  ) {
+  if (sceneType === "resolution") {
     return "At last, the long-hidden mystery began to make sense.";
   }
 
@@ -810,12 +791,12 @@ function buildVisualPrompt({
 
   return clean(
     `Cinematic 3D animated movie scene at ${location}. ` +
-    `Main character: ${characterDescription}. ` +
-    `Visible action: ${action} ` +
-    `${objectDescription} ` +
-    `${camera} ` +
-    `${lighting} ` +
-    `Highly detailed environment, natural body movement, expressive facial emotions, realistic cinematic composition, consistent character appearance, professional film quality.`
+      `Main character: ${characterDescription}. ` +
+      `Visible action: ${action} ` +
+      `${objectDescription} ` +
+      `${camera} ` +
+      `${lighting} ` +
+      `Highly detailed environment, natural body movement, expressive facial emotions, realistic cinematic composition, consistent character appearance, professional film quality.`
   );
 }
 
@@ -833,9 +814,7 @@ function createScene(
   totalScenesCount
 ) {
   const action = clean(
-    beats
-      .map((beat) => beat.text)
-      .join(" ")
+    beats.map((beat) => beat.text).join(" ")
   );
 
   const active = activeCharacters(
@@ -1180,7 +1159,7 @@ function handleProjectRequest(
 }
 
 // ============================================================
-// SUPPORTED ENDPOINTS
+// PROJECT ENDPOINTS
 // ============================================================
 
 app.post(
@@ -1196,6 +1175,297 @@ app.post(
 app.post(
   "/api/demo-project",
   handleProjectRequest
+);
+
+// ============================================================
+// VIDEO JOB SYSTEM
+// ============================================================
+
+const videoJobs = new Map();
+
+function createJobId() {
+  return `sanaptai_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+// ============================================================
+// CREATE VIDEO JOB
+// ============================================================
+
+app.post(
+  "/api/generate-video",
+  async (req, res) => {
+    try {
+      const body =
+        req.body || {};
+
+      let project =
+        body.project;
+
+      if (!project) {
+        const prompt =
+          body.prompt ||
+          body.story ||
+          body.videoPrompt ||
+          body.video_prompt;
+
+        if (
+          !prompt ||
+          !String(prompt).trim()
+        ) {
+          return res.status(400).json({
+            success: false,
+            error:
+              "Video prompt is required."
+          });
+        }
+
+        project =
+          generateProject(
+            String(prompt),
+            body.duration || 60,
+            body.aspectRatio ||
+              body.aspect_ratio ||
+              "16:9"
+          );
+      }
+
+      if (
+        !project ||
+        !project.scenes ||
+        !project.scenes.length
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "No scene plan available."
+        });
+      }
+
+      const jobId =
+        createJobId();
+
+      const job = {
+        job_id: jobId,
+
+        status:
+          "provider_not_connected",
+
+        progress: 0,
+
+        message:
+          "Scene plan is ready. Video generation provider is not connected yet.",
+
+        created_at:
+          new Date().toISOString(),
+
+        duration:
+          project.duration,
+
+        total_scenes:
+          project.scenes.length,
+
+        aspect_ratio:
+          project.aspect_ratio,
+
+        current_scene: 0,
+
+        total_scene_count:
+          project.scenes.length,
+
+        video_url: null,
+
+        project
+      };
+
+      videoJobs.set(
+        jobId,
+        job
+      );
+
+      return res.json({
+        success: true,
+
+        job_id: jobId,
+
+        status:
+          job.status,
+
+        progress: 0,
+
+        message:
+          job.message,
+
+        duration:
+          job.duration,
+
+        total_scenes:
+          job.total_scene_count,
+
+        aspect_ratio:
+          job.aspect_ratio
+      });
+
+    } catch (error) {
+      console.error(
+        "VIDEO JOB ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        error:
+          "Video job creation failed.",
+
+        details:
+          error?.message ||
+          "Unknown error."
+      });
+    }
+  }
+);
+
+// ============================================================
+// VIDEO JOB STATUS
+// ============================================================
+
+app.get(
+  "/api/video-status/:jobId",
+  (req, res) => {
+    const { jobId } =
+      req.params;
+
+    const job =
+      videoJobs.get(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error:
+          "Video job not found."
+      });
+    }
+
+    return res.json({
+      success: true,
+
+      job_id:
+        job.job_id,
+
+      status:
+        job.status,
+
+      progress:
+        job.progress,
+
+      message:
+        job.message,
+
+      current_scene:
+        job.current_scene,
+
+      total_scenes:
+        job.total_scene_count,
+
+      video_url:
+        job.video_url || null,
+
+      created_at:
+        job.created_at
+    });
+  }
+);
+
+// ============================================================
+// CANCEL VIDEO JOB
+// ============================================================
+
+app.post(
+  "/api/video-cancel/:jobId",
+  (req, res) => {
+    const { jobId } =
+      req.params;
+
+    const job =
+      videoJobs.get(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error:
+          "Video job not found."
+      });
+    }
+
+    if (
+      job.status === "completed" ||
+      job.status === "failed"
+    ) {
+      return res.json({
+        success: false,
+
+        message:
+          `Job is already ${job.status}.`
+      });
+    }
+
+    job.status =
+      "cancelled";
+
+    job.progress = 0;
+
+    job.message =
+      "Video generation cancelled.";
+
+    videoJobs.set(
+      jobId,
+      job
+    );
+
+    return res.json({
+      success: true,
+
+      job_id:
+        jobId,
+
+      status:
+        "cancelled"
+    });
+  }
+);
+
+// ============================================================
+// VIDEO ENGINE STATUS
+// ============================================================
+
+app.get(
+  "/api/video-engine",
+  (req, res) => {
+    const provider =
+      process.env.VIDEO_PROVIDER ||
+      "none";
+
+    return res.json({
+      success: true,
+
+      engine:
+        ENGINE_VERSION,
+
+      provider,
+
+      video_generation:
+        provider !== "none"
+          ? "configured"
+          : "not_connected",
+
+      message:
+        provider !== "none"
+          ? "Video provider configured."
+          : "Scene engine is ready. Connect a video provider to render videos."
+    });
+  }
 );
 
 // ============================================================
@@ -1233,431 +1503,7 @@ app.use(
 // ============================================================
 // SERVER START
 // ============================================================
-// ============================================================
-// SANAPTAI VIDEO JOB SYSTEM
-// ============================================================
 
-const videoJobs = new Map();
-
-function createJobId() {
-  return `sanaptai_${Date.now()}_${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-}
-
-// CREATE VIDEO JOB
-app.post("/api/generate-video", async (req, res) => {
-  try {
-    const body = req.body || {};
-
-    let project = body.project;
-
-    // Agar frontend ne project nahi bheja,
-    // to existing stable scene engine use hoga.
-    if (!project) {
-      const prompt =
-        body.prompt ||
-        body.story ||
-        body.videoPrompt ||
-        body.video_prompt;
-
-      if (!prompt || !String(prompt).trim()) {
-        return res.status(400).json({
-          success: false,
-          error: "Video prompt is required."
-        });
-      }
-
-      project = generateProject(
-        String(prompt),
-        body.duration || 60,
-        body.aspectRatio || body.aspect_ratio || "16:9"
-      );
-    }
-
-    if (!project || !project.scenes || !project.scenes.length) {
-      return res.status(400).json({
-        success: false,
-        error: "No scene plan available."
-      });
-    }
-
-    const jobId = createJobId();
-
-    const job = {
-      job_id: jobId,
-      status: "provider_not_connected",
-      progress: 0,
-      message:
-        "Scene plan is ready. Video generation provider is not connected yet.",
-      created_at: new Date().toISOString(),
-      duration: project.duration,
-      total_scenes: project.scenes.length,
-      aspect_ratio: project.aspect_ratio,
-      current_scene: 0,
-      total_scene_count: project.scenes.length,
-      project
-    };
-
-    videoJobs.set(jobId, job);
-
-    return res.json({
-      success: true,
-      job_id: jobId,
-      status: job.status,
-      progress: 0,
-      message: job.message,
-      total_scenes: job.total_scene_count
-    });
-
-  } catch (error) {
-    console.error("VIDEO JOB ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      error: "Video job creation failed.",
-      details: error?.message || "Unknown error."
-    });
-  }
-});
-
-
-// VIDEO JOB STATUS
-app.get("/api/video-status/:jobId", (req, res) => {
-  const { jobId } = req.params;
-
-  const job = videoJobs.get(jobId);
-
-  if (!job) {
-    return res.status(404).json({
-      success: false,
-      error: "Video job not found."
-    });
-  }
-
-  return res.json({
-    success: true,
-    job_id: job.job_id,
-    status: job.status,
-    progress: job.progress,
-    message: job.message,
-    current_scene: job.current_scene,
-    total_scenes: job.total_scene_count,
-    video_url: job.video_url || null,
-    created_at: job.created_at
-  });
-});
-
-
-// CANCEL VIDEO JOB
-app.post("/api/video-cancel/:jobId", (req, res) => {
-  const { jobId } = req.params;
-
-  const job = videoJobs.get(jobId);
-
-  if (!job) {
-    return res.status(404).json({
-      success: false,
-      error: "Video job not found."
-    });
-  }
-
-  if (
-    job.status === "completed" ||
-    job.status === "failed"
-  ) {
-    return res.json({
-      success: false,
-      message: `Job is already ${job.status}.`
-    });
-  }
-
-  job.status = "cancelled";
-  job.progress = 0;
-  job.message = "Video generation cancelled.";
-
-  videoJobs.set(jobId, job);
-
-  return res.json({
-    success: true,
-    job_id: jobId,
-    status: "cancelled"
-  });
-});
-
-
-// VIDEO ENGINE STATUS
-app.get("/api/video-engine", (req, res) => {
-  const provider = process.env.VIDEO_PROVIDER || "none";
-
-  return res.json({
-    success: true,
-    engine: ENGINE_VERSION,
-    provider,
-    video_generation:
-      provider !== "none"
-        ? "configured"
-        : "not_connected",
-    message:
-      provider !== "none"
-        ? "Video provider configured."
-        : "Scene engine is ready. Connect a video provider to render videos."
-  });
-});
-// ============================================================
-// SANAPTAI VIDEO JOB SYSTEM
-// ============================================================
-
-  return `sanaptai_${Date.now()}_${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-}
-
-
-// ============================================================
-// CREATE VIDEO JOB
-// ============================================================
-
-app.post("/api/generate-video", async (req, res) => {
-  try {
-    const body = req.body || {};
-
-    let project = body.project;
-
-    // Agar frontend project nahi bhejta,
-    // existing stable scene engine automatically use hoga.
-    if (!project) {
-      const prompt =
-        body.prompt ||
-        body.story ||
-        body.videoPrompt ||
-        body.video_prompt;
-
-      if (!prompt || !String(prompt).trim()) {
-        return res.status(400).json({
-          success: false,
-          error: "Video prompt is required."
-        });
-      }
-
-      project = generateProject(
-        String(prompt),
-        body.duration || 60,
-        body.aspectRatio ||
-          body.aspect_ratio ||
-          "16:9"
-      );
-    }
-
-    if (
-      !project ||
-      !project.scenes ||
-      !project.scenes.length
-    ) {
-      return res.status(400).json({
-        success: false,
-        error: "No scene plan available."
-      });
-    }
-
-    const jobId = createJobId();
-
-    const job = {
-      job_id: jobId,
-
-      // Abhi provider connect nahi hai.
-      // Fake completed video nahi banega.
-      status: "provider_not_connected",
-
-      progress: 0,
-
-      message:
-        "Scene plan is ready. Video generation provider is not connected yet.",
-
-      created_at: new Date().toISOString(),
-
-      duration: project.duration,
-
-      total_scenes: project.scenes.length,
-
-      aspect_ratio: project.aspect_ratio,
-
-      current_scene: 0,
-
-      total_scene_count: project.scenes.length,
-
-      video_url: null,
-
-      project
-    };
-
-    videoJobs.set(jobId, job);
-
-    return res.json({
-      success: true,
-
-      job_id: jobId,
-
-      status: job.status,
-
-      progress: 0,
-
-      message: job.message,
-
-      duration: job.duration,
-
-      total_scenes: job.total_scene_count,
-
-      aspect_ratio: job.aspect_ratio
-    });
-
-  } catch (error) {
-
-    console.error(
-      "VIDEO JOB ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-
-      error:
-        "Video job creation failed.",
-
-      details:
-        error?.message ||
-        "Unknown error."
-    });
-  }
-});
-
-
-// ============================================================
-// VIDEO JOB STATUS
-// ============================================================
-
-app.get(
-  "/api/video-status/:jobId",
-  (req, res) => {
-
-    const { jobId } = req.params;
-
-    const job = videoJobs.get(jobId);
-
-    if (!job) {
-      return res.status(404).json({
-        success: false,
-        error: "Video job not found."
-      });
-    }
-
-    return res.json({
-      success: true,
-
-      job_id: job.job_id,
-
-      status: job.status,
-
-      progress: job.progress,
-
-      message: job.message,
-
-      current_scene:
-        job.current_scene,
-
-      total_scenes:
-        job.total_scene_count,
-
-      video_url:
-        job.video_url || null,
-
-      created_at:
-        job.created_at
-    });
-  }
-);
-
-
-// ============================================================
-// CANCEL VIDEO JOB
-// ============================================================
-
-app.post(
-  "/api/video-cancel/:jobId",
-  (req, res) => {
-
-    const { jobId } = req.params;
-
-    const job = videoJobs.get(jobId);
-
-    if (!job) {
-      return res.status(404).json({
-        success: false,
-        error: "Video job not found."
-      });
-    }
-
-    if (
-      job.status === "completed" ||
-      job.status === "failed"
-    ) {
-      return res.json({
-        success: false,
-
-        message:
-          `Job is already ${job.status}.`
-      });
-    }
-
-    job.status = "cancelled";
-
-    job.progress = 0;
-
-    job.message =
-      "Video generation cancelled.";
-
-    videoJobs.set(jobId, job);
-
-    return res.json({
-      success: true,
-
-      job_id: jobId,
-
-      status: "cancelled"
-    });
-  }
-);
-
-
-// ============================================================
-// VIDEO ENGINE STATUS
-// ========================================================
-  (req, res) => {
-
-    const provider =
-      process.env.VIDEO_PROVIDER ||
-      "none";
-
-    return res.json({
-      success: true,
-
-      engine:
-        ENGINE_VERSION,
-
-      provider,
-
-      video_generation:
-        provider !== "none"
-          ? "configured"
-          : "not_connected",
-
-      message:
-        provider !== "none"
-          ? "Video provider configured."
-          : "Scene engine is ready. Connect a video provider to render videos."
-    });
-  }
-);
 app.listen(
   PORT,
   () => {
@@ -1677,4 +1523,4 @@ app.listen(
       `Scene duration: 10 seconds`
     );
   }
-);
+);      
