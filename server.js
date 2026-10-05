@@ -1404,6 +1404,266 @@ app.get("/api/video-engine", (req, res) => {
         : "Scene engine is ready. Connect a video provider to render videos."
   });
 });
+// ============================================================
+// SANAPTAI VIDEO JOB SYSTEM
+// ============================================================
+
+const videoJobs = new Map();
+
+function createJobId() {
+  return `sanaptai_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+
+// ============================================================
+// CREATE VIDEO JOB
+// ============================================================
+
+app.post("/api/generate-video", async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    let project = body.project;
+
+    // Agar frontend project nahi bhejta,
+    // existing stable scene engine automatically use hoga.
+    if (!project) {
+      const prompt =
+        body.prompt ||
+        body.story ||
+        body.videoPrompt ||
+        body.video_prompt;
+
+      if (!prompt || !String(prompt).trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "Video prompt is required."
+        });
+      }
+
+      project = generateProject(
+        String(prompt),
+        body.duration || 60,
+        body.aspectRatio ||
+          body.aspect_ratio ||
+          "16:9"
+      );
+    }
+
+    if (
+      !project ||
+      !project.scenes ||
+      !project.scenes.length
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "No scene plan available."
+      });
+    }
+
+    const jobId = createJobId();
+
+    const job = {
+      job_id: jobId,
+
+      // Abhi provider connect nahi hai.
+      // Fake completed video nahi banega.
+      status: "provider_not_connected",
+
+      progress: 0,
+
+      message:
+        "Scene plan is ready. Video generation provider is not connected yet.",
+
+      created_at: new Date().toISOString(),
+
+      duration: project.duration,
+
+      total_scenes: project.scenes.length,
+
+      aspect_ratio: project.aspect_ratio,
+
+      current_scene: 0,
+
+      total_scene_count: project.scenes.length,
+
+      video_url: null,
+
+      project
+    };
+
+    videoJobs.set(jobId, job);
+
+    return res.json({
+      success: true,
+
+      job_id: jobId,
+
+      status: job.status,
+
+      progress: 0,
+
+      message: job.message,
+
+      duration: job.duration,
+
+      total_scenes: job.total_scene_count,
+
+      aspect_ratio: job.aspect_ratio
+    });
+
+  } catch (error) {
+
+    console.error(
+      "VIDEO JOB ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      error:
+        "Video job creation failed.",
+
+      details:
+        error?.message ||
+        "Unknown error."
+    });
+  }
+});
+
+
+// ============================================================
+// VIDEO JOB STATUS
+// ============================================================
+
+app.get(
+  "/api/video-status/:jobId",
+  (req, res) => {
+
+    const { jobId } = req.params;
+
+    const job = videoJobs.get(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Video job not found."
+      });
+    }
+
+    return res.json({
+      success: true,
+
+      job_id: job.job_id,
+
+      status: job.status,
+
+      progress: job.progress,
+
+      message: job.message,
+
+      current_scene:
+        job.current_scene,
+
+      total_scenes:
+        job.total_scene_count,
+
+      video_url:
+        job.video_url || null,
+
+      created_at:
+        job.created_at
+    });
+  }
+);
+
+
+// ============================================================
+// CANCEL VIDEO JOB
+// ============================================================
+
+app.post(
+  "/api/video-cancel/:jobId",
+  (req, res) => {
+
+    const { jobId } = req.params;
+
+    const job = videoJobs.get(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Video job not found."
+      });
+    }
+
+    if (
+      job.status === "completed" ||
+      job.status === "failed"
+    ) {
+      return res.json({
+        success: false,
+
+        message:
+          `Job is already ${job.status}.`
+      });
+    }
+
+    job.status = "cancelled";
+
+    job.progress = 0;
+
+    job.message =
+      "Video generation cancelled.";
+
+    videoJobs.set(jobId, job);
+
+    return res.json({
+      success: true,
+
+      job_id: jobId,
+
+      status: "cancelled"
+    });
+  }
+);
+
+
+// ============================================================
+// VIDEO ENGINE STATUS
+// ============================================================
+
+app.get(
+  "/api/video-engine",
+  (req, res) => {
+
+    const provider =
+      process.env.VIDEO_PROVIDER ||
+      "none";
+
+    return res.json({
+      success: true,
+
+      engine:
+        ENGINE_VERSION,
+
+      provider,
+
+      video_generation:
+        provider !== "none"
+          ? "configured"
+          : "not_connected",
+
+      message:
+        provider !== "none"
+          ? "Video provider configured."
+          : "Scene engine is ready. Connect a video provider to render videos."
+    });
+  }
+);
 app.listen(
   PORT,
   () => {
