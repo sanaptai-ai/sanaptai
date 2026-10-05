@@ -1408,9 +1408,6 @@ app.get("/api/video-engine", (req, res) => {
 // SANAPTAI VIDEO JOB SYSTEM
 // ============================================================
 
-const videoJobs = new Map();
-
-function createJobId() {
   return `sanaptai_${Date.now()}_${Math.random()
     .toString(36)
     .slice(2, 8)}`;
@@ -1634,10 +1631,7 @@ app.post(
 
 // ============================================================
 // VIDEO ENGINE STATUS
-// ============================================================
-
-app.get(
-  "/api/video-engine",
+// ========================================================
   (req, res) => {
 
     const provider =
