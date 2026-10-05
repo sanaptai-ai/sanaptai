@@ -13,7 +13,7 @@ app.use(express.json({ limit: "2mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-const ENGINE_VERSION = "FINAL-1.4";
+const ENGINE_VERSION = "FINAL-1.5";
 
 // ============================================================
 // STATIC FRONTEND
@@ -254,6 +254,7 @@ function createScene(index, beats, allCharacters, protagonist, usedDialogue, isF
   const location = beats.find(b => b.location)?.location || "Alex's apartment";
   const dialogue = dialogueFor(beats, active, usedDialogue, protagonist, isFinalScene);
   const voiceover = voiceoverFor(beats);
+  const continuityLock = `Keep ${protagonist} visually consistent throughout the entire story.`;
 
   return {
     scene_number: index + 1,
@@ -270,7 +271,9 @@ function createScene(index, beats, allCharacters, protagonist, usedDialogue, isF
     voiceover,
     camera: cameraFor(type, objects),
     lighting: lightingFor(type),
-    continuity_lock: `Keep ${protagonist} visually consistent.`,
+    // Duplicate fields to match any frontend variant:
+    continuity_lock: continuityLock,
+    continuity: continuityLock,
     final_scene: isFinalScene
   };
 }
@@ -279,6 +282,7 @@ function generateProject(prompt, duration, aspectRatio) {
   const requestedSeconds = Number(duration) || 60;
   const seconds = Math.min(60, Math.max(10, Math.floor(requestedSeconds / 10) * 10));
   const sceneCount = Math.floor(seconds / 10);
+  const aspect = aspectRatio || "16:9";
 
   const characters = analyzeCharacters(prompt);
   const protagonist = findProtagonist(prompt, characters);
@@ -294,14 +298,19 @@ function generateProject(prompt, duration, aspectRatio) {
   return {
     success: true,
     engine_version: ENGINE_VERSION,
-    // BOTH FORMATS PROVIDED TO PREVENT FRONTEND BREAKAGE:
-    scenes: scenes, 
+    
+    // Root level parameters for frontend compatibility:
+    duration: seconds,
+    total_scenes: sceneCount,
+    aspect_ratio: aspect,
+    scenes: scenes,
     scene_plan: scenes,
+
     project: {
       prompt: clean(prompt),
       duration: seconds,
       total_scenes: sceneCount,
-      aspect_ratio: aspectRatio || "16:9",
+      aspect_ratio: aspect,
       protagonist,
       characters,
       scenes
