@@ -85,7 +85,7 @@ const relationshipMap = {
   grandfather: "Grandfather",
   grandpa: "Grandfather",
   "grandfather's": "Grandfather",
-  grandpa's: "Grandfather",
+  "grandpa's": "Grandfather",
 
   grandmother: "Grandmother",
   grandma: "Grandmother",
