@@ -13,7 +13,7 @@ app.use(express.json({ limit: "2mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-const ENGINE_VERSION = "SANAPTAI-20M-2.0";
+const ENGINE_VERSION = "SANAPTAI-20M-3.0";
 
 // ============================================================
 // STATIC FRONTEND
@@ -92,7 +92,10 @@ function parseDuration(value) {
   if (typeof value === "number") {
     return Math.max(
       10,
-      Math.min(1200, Math.floor(value / 10) * 10)
+      Math.min(
+        1200,
+        Math.floor(value / 10) * 10
+      )
     );
   }
 
@@ -102,20 +105,24 @@ function parseDuration(value) {
     return 60;
   }
 
-  const match = text.match(/(\d+(?:\.\d+)?)/);
+  const match =
+    text.match(/(\d+(?:\.\d+)?)/);
 
   if (!match) {
     return 60;
   }
 
-  const number = Number(match[1]);
+  const number =
+    Number(match[1]);
 
   if (text.includes("minute")) {
     return Math.max(
       10,
       Math.min(
         1200,
-        Math.round((number * 60) / 10) * 10
+        Math.round(
+          (number * 60) / 10
+        ) * 10
       )
     );
   }
@@ -190,7 +197,9 @@ function analyzeCharacters(prompt) {
 
       if (
         name &&
-        !bannedNames.includes(lower(name)) &&
+        !bannedNames.includes(
+          lower(name)
+        ) &&
         !names.includes(name)
       ) {
         names.push(name);
@@ -201,7 +210,10 @@ function analyzeCharacters(prompt) {
   return unique(names);
 }
 
-function findProtagonist(prompt, characters = []) {
+function findProtagonist(
+  prompt,
+  characters = []
+) {
   const text = String(prompt);
 
   const named =
@@ -220,33 +232,162 @@ function findProtagonist(prompt, characters = []) {
   return "Alex";
 }
 
-function activeCharacters(sceneText, protagonist) {
+// ============================================================
+// MASTER CHARACTER LOCK
+// ============================================================
+
+function extractAge(prompt, protagonist) {
+  const text = String(prompt);
+
+  const patterns = [
+    new RegExp(
+      `(\\d{1,3})[- ]year[- ]old[^.]*\\b${protagonist}\\b`,
+      "i"
+    ),
+    new RegExp(
+      `\\b${protagonist}\\b[^.]*?(\\d{1,3})[- ]year[- ]old`,
+      "i"
+    ),
+    /(\d{1,3})[- ]year[- ]old/i
+  ];
+
+  for (const regex of patterns) {
+    const match = text.match(regex);
+
+    if (match) {
+      const age =
+        Number(
+          match[1] || match[2]
+        );
+
+      if (
+        age >= 1 &&
+        age <= 120
+      ) {
+        return age;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractRole(
+  prompt,
+  protagonist
+) {
+  const text = String(prompt);
+
+  const rolePatterns = [
+    new RegExp(
+      `\\b${protagonist}\\b[^.]{0,80}?\\b(?:is|works as|a)\\s+(?:an?\\s+)?([A-Za-z]+(?:\\s+[A-Za-z]+){0,3})`,
+      "i"
+    ),
+    new RegExp(
+      `\\b(?:a|an)\\s+([A-Za-z]+(?:\\s+[A-Za-z]+){0,3})\\s+(?:named|called)\\s+${protagonist}\\b`,
+      "i"
+    )
+  ];
+
+  for (const regex of rolePatterns) {
+    const match =
+      text.match(regex);
+
+    if (match && match[1]) {
+      const role =
+        clean(match[1])
+          .replace(
+            /\b(named|called)\b/gi,
+            ""
+          )
+          .trim();
+
+      if (
+        role &&
+        role.length < 60
+      ) {
+        return role;
+      }
+    }
+  }
+
+  if (
+    /delivery driver/i.test(text)
+  ) {
+    return "delivery driver";
+  }
+
+  return "main protagonist";
+}
+
+function buildMasterCharacterLock(
+  prompt,
+  protagonist
+) {
+  const age =
+    extractAge(
+      prompt,
+      protagonist
+    );
+
+  const role =
+    extractRole(
+      prompt,
+      protagonist
+    );
+
+  const ageText =
+    age
+      ? `${age}-year-old`
+      : "same age as established in the story";
+
+  return clean(
+    `${protagonist} is the main character, a ${ageText} ${role}. ` +
+    `Maintain EXACT visual identity in every scene: same face, facial structure, skin tone, hairstyle, hair color, eye color, body proportions, height, build, clothing, clothing colors, shoes and accessories. ` +
+    `Do not randomly change age, face, hairstyle, clothing or body type. ` +
+    `Only change appearance when the story explicitly requires a change. ` +
+    `Use the same cinematic visual style throughout the entire video.`
+  );
+}
+
+function activeCharacters(
+  sceneText,
+  protagonist
+) {
   const text = lower(sceneText);
 
   const result = [];
 
   if (
     protagonist &&
-    text.includes(lower(protagonist))
+    text.includes(
+      lower(protagonist)
+    )
   ) {
     result.push(protagonist);
   }
 
-  for (const [keyword, character] of Object.entries(
-    relationshipMap
-  )) {
-    const regex = new RegExp(
-      `\\b${keyword.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
-      )}\\b`
-    );
+  for (
+    const [keyword, character]
+    of Object.entries(
+      relationshipMap
+    )
+  ) {
+    const regex =
+      new RegExp(
+        `\\b${keyword.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        )}\\b`
+      );
 
     if (!regex.test(text)) {
       continue;
     }
 
-    if (character === "Grandfather") {
+    if (
+      character === "Grandfather"
+    ) {
       const backstory =
         /photograph|photo|picture|journal|letter|memory|past|history|late grandfather|old grandfather/.test(
           text
@@ -257,17 +398,25 @@ function activeCharacters(sceneText, protagonist) {
           text
         );
 
-      if (backstory && !physicalAction) {
+      if (
+        backstory &&
+        !physicalAction
+      ) {
         continue;
       }
     }
 
-    if (!result.includes(character)) {
+    if (
+      !result.includes(character)
+    ) {
       result.push(character);
     }
   }
 
-  if (!result.length && protagonist) {
+  if (
+    !result.length &&
+    protagonist
+  ) {
     result.push(protagonist);
   }
 
@@ -320,27 +469,42 @@ const locationRules = [
   },
 
   {
-    keywords: ["school"],
+    keywords: [
+      "school"
+    ],
     name: "school"
   },
 
   {
-    keywords: ["hospital"],
+    keywords: [
+      "hospital"
+    ],
     name: "hospital"
   },
 
   {
-    keywords: ["office"],
+    keywords: [
+      "office"
+    ],
     name: "office"
   }
 ];
 
 function mentionedLocation(text) {
-  const value = lower(text);
+  const value =
+    lower(text);
 
-  for (const rule of locationRules) {
-    for (const keyword of rule.keywords) {
-      if (value.includes(keyword)) {
+  for (
+    const rule
+    of locationRules
+  ) {
+    for (
+      const keyword
+      of rule.keywords
+    ) {
+      if (
+        value.includes(keyword)
+      ) {
         return rule.name;
       }
     }
@@ -349,21 +513,31 @@ function mentionedLocation(text) {
   return null;
 }
 
-function resolveLocations(beats) {
-  let currentLocation = "Alex's apartment";
+function resolveLocations(
+  beats
+) {
+  let currentLocation =
+    "Alex's apartment";
 
-  return beats.map((beat) => {
-    const mentioned = mentionedLocation(beat.text);
+  return beats.map(
+    (beat) => {
+      const mentioned =
+        mentionedLocation(
+          beat.text
+        );
 
-    if (mentioned) {
-      currentLocation = mentioned;
+      if (mentioned) {
+        currentLocation =
+          mentioned;
+      }
+
+      return {
+        ...beat,
+        location:
+          currentLocation
+      };
     }
-
-    return {
-      ...beat,
-      location: currentLocation
-    };
-  });
+  );
 }
 
 // ============================================================
@@ -371,12 +545,19 @@ function resolveLocations(beats) {
 // ============================================================
 
 function objectsFor(text) {
-  const value = lower(text);
+  const value =
+    lower(text);
 
   const objects = [];
 
-  if (/film camera|old camera|camera/.test(value)) {
-    objects.push("film camera");
+  if (
+    /film camera|old camera|camera/.test(
+      value
+    )
+  ) {
+    objects.push(
+      "film camera"
+    );
   }
 
   if (
@@ -384,31 +565,63 @@ function objectsFor(text) {
       value
     )
   ) {
-    objects.push("family photograph");
+    objects.push(
+      "family photograph"
+    );
   }
 
-  if (/journal|old journal/.test(value)) {
-    objects.push("old journal");
+  if (
+    /journal|old journal/.test(
+      value
+    )
+  ) {
+    objects.push(
+      "old journal"
+    );
   }
 
-  if (/red clock/.test(value)) {
-    objects.push("red clock");
+  if (
+    /red clock/.test(value)
+  ) {
+    objects.push(
+      "red clock"
+    );
   }
 
-  if (/key/.test(value)) {
-    objects.push("key");
+  if (
+    /key/.test(value)
+  ) {
+    objects.push(
+      "key"
+    );
   }
 
-  if (/wooden locker|locker/.test(value)) {
-    objects.push("wooden locker");
+  if (
+    /wooden locker|locker/.test(
+      value
+    )
+  ) {
+    objects.push(
+      "wooden locker"
+    );
   }
 
-  if (/letter/.test(value)) {
-    objects.push("letter");
+  if (
+    /letter/.test(value)
+  ) {
+    objects.push(
+      "letter"
+    );
   }
 
-  if (/glass case|case/.test(value)) {
-    objects.push("glass case");
+  if (
+    /glass case|case/.test(
+      value
+    )
+  ) {
+    objects.push(
+      "glass case"
+    );
   }
 
   return unique(objects);
@@ -419,7 +632,8 @@ function objectsFor(text) {
 // ============================================================
 
 function classify(text) {
-  const value = lower(text);
+  const value =
+    lower(text);
 
   if (
     /realizes|realise|realized|realised|understands|understood|truth|family history|revelation|reveals|finally/.test(
@@ -485,7 +699,8 @@ function classify(text) {
 // ============================================================
 
 function splitAtomicBeats(text) {
-  const source = clean(text);
+  const source =
+    clean(text);
 
   if (!source) {
     return [];
@@ -496,8 +711,13 @@ function splitAtomicBeats(text) {
     .filter(Boolean);
 }
 
-function buildStoryBeats(prompt) {
-  const beats = splitAtomicBeats(prompt);
+function buildStoryBeats(
+  prompt
+) {
+  const beats =
+    splitAtomicBeats(
+      prompt
+    );
 
   if (!beats.length) {
     return [
@@ -509,48 +729,77 @@ function buildStoryBeats(prompt) {
     ];
   }
 
-  return beats.map((text, index) => ({
-    id: index + 1,
-    text,
-    type: classify(text)
-  }));
+  return beats.map(
+    (text, index) => ({
+      id: index + 1,
+      text,
+      type: classify(text)
+    })
+  );
 }
 
 // ============================================================
 // SCENE ALLOCATION
 // ============================================================
 
-function allocateScenes(beats, sceneCount) {
+function allocateScenes(
+  beats,
+  sceneCount
+) {
   const groups = [];
 
   if (!beats.length) {
-    for (let i = 0; i < sceneCount; i++) {
+    for (
+      let i = 0;
+      i < sceneCount;
+      i++
+    ) {
       groups.push([]);
     }
 
     return groups;
   }
 
-  for (let i = 0; i < sceneCount; i++) {
-    const start = Math.floor(
-      (i * beats.length) / sceneCount
-    );
-
-    const end = Math.floor(
-      ((i + 1) * beats.length) / sceneCount
-    );
-
-    let group = beats.slice(start, end);
-
-    if (!group.length) {
-      const nearestIndex = Math.min(
-        Math.floor(
-          (i * beats.length) / sceneCount
-        ),
-        beats.length - 1
+  for (
+    let i = 0;
+    i < sceneCount;
+    i++
+  ) {
+    const start =
+      Math.floor(
+        (i * beats.length) /
+        sceneCount
       );
 
-      group = [beats[nearestIndex]];
+    const end =
+      Math.floor(
+        ((i + 1) *
+          beats.length) /
+        sceneCount
+      );
+
+    let group =
+      beats.slice(
+        start,
+        end
+      );
+
+    if (!group.length) {
+      const nearestIndex =
+        Math.min(
+          Math.floor(
+            (i *
+              beats.length) /
+            sceneCount
+          ),
+          beats.length - 1
+        );
+
+      group = [
+        beats[
+          nearestIndex
+        ]
+      ];
     }
 
     groups.push(group);
@@ -569,35 +818,69 @@ function dialogueFor(
   usedDialogue,
   isFinalScene = false
 ) {
-  const text = lower(
-    sceneBeats.map((beat) => beat.text).join(" ")
-  );
+  const text =
+    lower(
+      sceneBeats
+        .map(
+          (beat) =>
+            beat.text
+        )
+        .join(" ")
+    );
 
   let dialogue = "";
 
-  if (isFinalScene) {
+  // Most specific story action comes first.
+  if (
+    /waiting for someone who never returned|waiting for someone who never came|never returned|never came/.test(
+      text
+    )
+  ) {
     dialogue =
-      "Now I finally understand what really happened.";
+      "Grandpa was waiting for someone who never came.";
+  } else if (
+    /letter/.test(text) &&
+    /grandfather|grandpa|family|past|history/.test(
+      text
+    )
+  ) {
+    dialogue =
+      "This letter explains what happened to Grandpa.";
+  } else if (
+    /locker/.test(text) &&
+    /opens|opened|unlock|unlocked|key/.test(
+      text
+    )
+  ) {
+    dialogue =
+      "The key opens this locker.";
+  } else if (
+    /key/.test(text) &&
+    /hidden|finds|found|discovers|discovered|case/.test(
+      text
+    )
+  ) {
+    dialogue =
+      "Why was this key hidden here?";
+  } else if (
+    /red clock/.test(text) &&
+    /working|still/.test(text)
+  ) {
+    dialogue =
+      "That clock is still working.";
+  } else if (
+    /journal/.test(text) &&
+    /mentions|mention|same|station|place/.test(
+      text
+    )
+  ) {
+    dialogue =
+      "This journal mentions the same station.";
   } else if (
     /photograph|photo|picture/.test(text)
   ) {
     dialogue =
       "Why would Grandpa keep this photograph?";
-  } else if (/journal/.test(text)) {
-    dialogue =
-      "This journal mentions the same place.";
-  } else if (/red clock/.test(text)) {
-    dialogue =
-      "That clock is still working.";
-  } else if (/key/.test(text)) {
-    dialogue =
-      "Why was this key hidden here?";
-  } else if (/locker/.test(text)) {
-    dialogue =
-      "What was Grandpa hiding in here?";
-  } else if (/letter/.test(text)) {
-    dialogue =
-      "This letter changes everything.";
   } else if (
     /travels|travel|goes to|go to|heads to|arrives|reaches/.test(
       text
@@ -626,26 +909,75 @@ function dialogueFor(
   ) {
     dialogue =
       "There has to be something I'm missing.";
+  } else if (
+    isFinalScene
+  ) {
+    dialogue =
+      "Now I finally understand what happened.";
   }
 
-  dialogue = clean(dialogue);
+  dialogue =
+    clean(dialogue);
 
   if (!dialogue) {
     return [];
   }
 
-  if (usedDialogue.has(dialogue)) {
+  if (
+    usedDialogue.has(dialogue)
+  ) {
     return [];
   }
 
-  usedDialogue.add(dialogue);
+  usedDialogue.add(
+    dialogue
+  );
 
   return [
     {
-      speaker: protagonist,
-      text: dialogue
+      speaker:
+        protagonist,
+      text:
+        dialogue
     }
   ];
+}
+
+// ============================================================
+// DIALOGUE TIMING
+// ============================================================
+
+function estimateSpeechSeconds(
+  text
+) {
+  const words =
+    clean(text)
+      .split(/\s+/)
+      .filter(Boolean)
+      .length;
+
+  // Comfortable conversational speech.
+  return Math.ceil(
+    words / 2.3
+  );
+}
+
+function dialogueFits10Seconds(
+  dialogue
+) {
+  if (
+    !Array.isArray(dialogue) ||
+    !dialogue.length
+  ) {
+    return true;
+  }
+
+  return dialogue.every(
+    (line) =>
+      estimateSpeechSeconds(
+        line.text
+      ) <= 8
+  );
 }
 
 // ============================================================
@@ -655,91 +987,204 @@ function dialogueFor(
 function voiceoverFor(
   sceneBeats,
   sceneType,
-  isFinalScene = false
+  isFinalScene = false,
+  usedVoiceovers = new Set()
 ) {
-  const text = lower(
-    sceneBeats.map((beat) => beat.text).join(" ")
+  const text =
+    lower(
+      sceneBeats
+        .map(
+          (beat) =>
+            beat.text
+        )
+        .join(" ")
+    );
+
+  const candidates = [];
+
+  if (
+    isFinalScene
+  ) {
+    candidates.push(
+      "The truth finally connected the missing pieces of his family's past."
+    );
+  }
+
+  if (
+    /letter/.test(text)
+  ) {
+    candidates.push(
+      "The letter carried the final piece of a forgotten story."
+    );
+  }
+
+  if (
+    /key|locker/.test(text)
+  ) {
+    candidates.push(
+      "One small discovery opened the door to a much bigger secret."
+    );
+  }
+
+  if (
+    /red clock/.test(text)
+  ) {
+    candidates.push(
+      "The impossible detail made the mystery feel real."
+    );
+  }
+
+  if (
+    /journal/.test(text)
+  ) {
+    candidates.push(
+      "The old journal revealed that this mystery had started long ago."
+    );
+  }
+
+  if (
+    /photograph|photo|picture/.test(text)
+  ) {
+    candidates.push(
+      "The old photograph seemed to contain a clue from the past."
+    );
+  }
+
+  if (
+    sceneType === "setup"
+  ) {
+    candidates.push(
+      "He had no idea this ordinary moment would change everything."
+    );
+  }
+
+  if (
+    sceneType === "discovery"
+  ) {
+    candidates.push(
+      "The discovery gave him another reason to keep searching."
+    );
+  }
+
+  if (
+    sceneType === "investigation"
+  ) {
+    candidates.push(
+      "The more he searched, the deeper the mystery became."
+    );
+  }
+
+  if (
+    sceneType === "journey"
+  ) {
+    candidates.push(
+      "Determined to find answers, he followed the only clue he had."
+    );
+  }
+
+  if (
+    sceneType === "warning"
+  ) {
+    candidates.push(
+      "For the first time, he realized that something was wrong."
+    );
+  }
+
+  if (
+    sceneType === "action"
+  ) {
+    candidates.push(
+      "Every step brought him closer to the truth."
+    );
+  }
+
+  if (
+    sceneType === "revelation"
+  ) {
+    candidates.push(
+      "What he discovered changed everything he believed."
+    );
+  }
+
+  if (
+    sceneType === "resolution"
+  ) {
+    candidates.push(
+      "At last, the long-hidden mystery began to make sense."
+    );
+  }
+
+  candidates.push(
+    "Something about this moment felt more important than it seemed."
   );
 
-  if (isFinalScene) {
-    return "The truth finally connected the missing pieces of his family's past.";
+  for (
+    const candidate
+    of candidates
+  ) {
+    const cleaned =
+      clean(candidate);
+
+    if (
+      cleaned &&
+      !usedVoiceovers.has(
+        cleaned
+      )
+    ) {
+      usedVoiceovers.add(
+        cleaned
+      );
+
+      return cleaned;
+    }
   }
 
-  if (sceneType === "setup") {
-    return "He had no idea this ordinary moment would change everything.";
-  }
-
-  if (sceneType === "discovery") {
-    return "The discovery gave him a reason to keep searching.";
-  }
-
-  if (sceneType === "investigation") {
-    return "The more he searched, the deeper the mystery became.";
-  }
-
-  if (sceneType === "journey") {
-    return "Determined to find answers, he followed the only clue he had.";
-  }
-
-  if (sceneType === "warning") {
-    return "For the first time, he realized that he might be in danger.";
-  }
-
-  if (sceneType === "action") {
-    return "Every step brought him closer to the truth.";
-  }
-
-  if (sceneType === "revelation") {
-    return "What he discovered changed everything he believed.";
-  }
-
-  if (sceneType === "resolution") {
-    return "At last, the long-hidden mystery began to make sense.";
-  }
-
-  if (/photograph|photo|picture/.test(text)) {
-    return "The old photograph seemed to contain a clue from the past.";
-  }
-
-  if (/journal/.test(text)) {
-    return "The journal revealed that the mystery was older than he expected.";
-  }
-
-  if (/letter/.test(text)) {
-    return "The letter carried the final piece of a forgotten story.";
-  }
-
-  return "Something about this moment felt more important than it seemed.";
+  return "";
 }
 
 // ============================================================
 // CAMERA
 // ============================================================
 
-function cameraFor(type, objects = []) {
-  if (type === "discovery") {
+function cameraFor(
+  type,
+  objects = []
+) {
+  if (
+    type === "discovery"
+  ) {
     return objects.length
       ? `Slow push-in toward ${objects[0]} as the character discovers it.`
       : "Slow cinematic push-in as the character notices something unusual.";
   }
 
-  if (type === "investigation") {
+  if (
+    type === "investigation"
+  ) {
     return "Controlled cinematic tracking shot following the character as they investigate the surroundings.";
   }
 
-  if (type === "journey") {
+  if (
+    type === "journey"
+  ) {
     return "Wide cinematic tracking shot following the character through the environment.";
   }
 
-  if (type === "action") {
+  if (
+    type === "action"
+  ) {
     return "Dynamic medium shot with subtle handheld cinematic movement.";
   }
 
-  if (type === "revelation") {
+  if (
+    type === "revelation"
+  ) {
     return "Slow dramatic close-up on the character's emotional reaction.";
   }
 
-  if (type === "resolution") {
+  if (
+    type === "resolution"
+  ) {
     return "Gentle cinematic pull-back revealing the character and surrounding environment.";
   }
 
@@ -750,16 +1195,24 @@ function cameraFor(type, objects = []) {
 // LIGHTING
 // ============================================================
 
-function lightingFor(type) {
-  if (type === "warning") {
+function lightingFor(
+  type
+) {
+  if (
+    type === "warning"
+  ) {
     return "Moody cinematic lighting with deeper shadows and subtle tension.";
   }
 
-  if (type === "revelation") {
+  if (
+    type === "revelation"
+  ) {
     return "Dramatic cinematic lighting emphasizing the character's emotional reaction.";
   }
 
-  if (type === "resolution") {
+  if (
+    type === "resolution"
+  ) {
     return "Warm cinematic lighting creating an emotional sense of closure.";
   }
 
@@ -767,36 +1220,83 @@ function lightingFor(type) {
 }
 
 // ============================================================
-// VISUAL PROMPT
+// FLOW STYLE
 // ============================================================
 
-function buildVisualPrompt({
-  location,
-  protagonist,
-  characters,
-  objects,
-  action,
-  camera,
-  lighting
-}) {
-  const characterDescription =
-    characters.length
-      ? characters.join(", ")
-      : protagonist;
+function aspectInstruction(
+  aspectRatio
+) {
+  const value =
+    lower(aspectRatio);
 
+  if (
+    value.includes("9:16") ||
+    value.includes("short")
+  ) {
+    return "Vertical 9:16 composition. Keep important characters and objects centered safely inside the vertical frame.";
+  }
+
+  if (
+    value.includes("1:1") ||
+    value.includes("square")
+  ) {
+    return "Square 1:1 composition. Keep the main character and important objects clearly visible.";
+  }
+
+  return "Landscape 16:9 cinematic composition.";
+}
+
+// ============================================================
+// FLOW-READY VIDEO PROMPT
+// ============================================================
+
+function buildFlowPrompt({
+  masterCharacterLock,
+  location,
+  action,
+  objects,
+  camera,
+  lighting,
+  dialogue,
+  aspectRatio
+}) {
   const objectDescription =
     objects.length
-      ? `Important objects: ${objects.join(", ")}.`
+      ? `Important story objects: ${objects.join(", ")}.`
       : "";
 
+  const dialogueText =
+    Array.isArray(dialogue) &&
+    dialogue.length
+      ? dialogue
+          .map(
+            (line) =>
+              `${line.speaker} says: "${line.text}"`
+          )
+          .join(" ")
+      : "";
+
+  const dialogueInstruction =
+    dialogueText
+      ? `Spoken dialogue: ${dialogueText} ` +
+        `The character must speak the dialogue aloud in natural American English. ` +
+        `Use accurate visible lip-sync matching every spoken word. ` +
+        `Do not display the dialogue as on-screen text. ` +
+        `No subtitles or captions.`
+      : `No spoken dialogue in this scene. Do not invent dialogue.`;
+
   return clean(
-    `Cinematic 3D animated movie scene at ${location}. ` +
-      `Main character: ${characterDescription}. ` +
-      `Visible action: ${action} ` +
-      `${objectDescription} ` +
-      `${camera} ` +
-      `${lighting} ` +
-      `Highly detailed environment, natural body movement, expressive facial emotions, realistic cinematic composition, consistent character appearance, professional film quality.`
+    `Cinematic realistic 3D animated movie style, 4K quality. ` +
+    `${masterCharacterLock} ` +
+    `Location: ${location}. ` +
+    `Action: ${action} ` +
+    `${objectDescription} ` +
+    `Camera: ${camera} ` +
+    `Lighting: ${lighting} ` +
+    `${aspectInstruction(aspectRatio)} ` +
+    `Natural body movement, realistic facial expressions, believable hand movement, cinematic depth of field, professional film composition, smooth motion, consistent environment, consistent character identity. ` +
+    `${dialogueInstruction} ` +
+    `No random character changes, no extra characters unless explicitly required by the scene, no text overlays, no watermark.`
   );
 }
 
@@ -810,91 +1310,132 @@ function createScene(
   allCharacters,
   protagonist,
   usedDialogue,
+  usedVoiceovers,
   isFinalScene,
-  totalScenesCount
+  totalScenesCount,
+  masterCharacterLock,
+  aspectRatio
 ) {
-  const action = clean(
-    beats.map((beat) => beat.text).join(" ")
-  );
+  const action =
+    clean(
+      beats
+        .map(
+          (beat) =>
+            beat.text
+        )
+        .join(" ")
+    );
 
-  const active = activeCharacters(
-    action,
-    protagonist
-  );
+  const active =
+    activeCharacters(
+      action,
+      protagonist
+    );
 
-  const objects = unique(
-    beats.flatMap((beat) =>
-      objectsFor(beat.text)
-    )
-  );
+  const objects =
+    unique(
+      beats.flatMap(
+        (beat) =>
+          objectsFor(
+            beat.text
+          )
+      )
+    );
 
   const type =
-    beats[0]?.type || "setup";
+    beats[0]?.type ||
+    "setup";
 
   const location =
-    beats.find((beat) => beat.location)
-      ?.location ||
+    beats.find(
+      (beat) =>
+        beat.location
+    )?.location ||
     "Alex's apartment";
 
-  const dialogue = dialogueFor(
-    beats,
-    protagonist,
-    usedDialogue,
-    isFinalScene
-  );
+  const dialogue =
+    dialogueFor(
+      beats,
+      protagonist,
+      usedDialogue,
+      isFinalScene
+    );
 
-  const voiceover = voiceoverFor(
-    beats,
-    type,
-    isFinalScene
-  );
+  // Safety: dialogue should comfortably fit inside 10 sec.
+  const safeDialogue =
+    dialogueFits10Seconds(
+      dialogue
+    )
+      ? dialogue
+      : [];
 
-  const camera = cameraFor(
-    type,
-    objects
-  );
+  const voiceover =
+    voiceoverFor(
+      beats,
+      type,
+      isFinalScene,
+      usedVoiceovers
+    );
 
-  const lighting = lightingFor(type);
+  const camera =
+    cameraFor(
+      type,
+      objects
+    );
 
-  const continuityLock =
-    `Keep ${protagonist} visually consistent throughout the entire story: same face, age, hairstyle, body type and clothing unless the story explicitly changes them.`;
+  const lighting =
+    lightingFor(type);
 
-  const scenesPerAct = Math.max(
-    1,
-    Math.ceil(totalScenesCount / 4)
-  );
+  const scenesPerAct =
+    Math.max(
+      1,
+      Math.ceil(
+        totalScenesCount / 4
+      )
+    );
 
-  const actNumber = Math.min(
-    4,
-    Math.floor(index / scenesPerAct) + 1
-  );
+  const actNumber =
+    Math.min(
+      4,
+      Math.floor(
+        index / scenesPerAct
+      ) + 1
+    );
 
   const chapter =
     `Act ${actNumber}`;
 
-  const visualPrompt =
-    buildVisualPrompt({
+  const continuityLock =
+    masterCharacterLock;
+
+  const flowPrompt =
+    buildFlowPrompt({
+      masterCharacterLock,
       location,
-      protagonist,
-      characters:
-        active.length
-          ? active
-          : [protagonist],
-      objects,
       action,
+      objects,
       camera,
-      lighting
+      lighting,
+      dialogue:
+        safeDialogue,
+      aspectRatio
     });
 
   return {
-    scene_number: index + 1,
+    scene_number:
+      index + 1,
 
-    start_time: index * 10,
+    start_time:
+      index * 10,
 
     end_time:
       (index + 1) * 10,
 
-    duration: 10,
+    duration:
+      10,
+
+    duration_seconds:
+      10,
 
     type,
 
@@ -912,9 +1453,35 @@ function createScene(
     action,
 
     visual_prompt:
-      clean(visualPrompt),
+      clean(flowPrompt),
 
-    dialogue,
+    flow_video_prompt:
+      clean(flowPrompt),
+
+    dialogue:
+      safeDialogue,
+
+    dialogue_text:
+      safeDialogue.length
+        ? safeDialogue
+            .map(
+              (line) =>
+                line.text
+            )
+            .join(" ")
+        : "",
+
+    dialogue_timing_seconds:
+      safeDialogue.length
+        ? Math.max(
+            ...safeDialogue.map(
+              (line) =>
+                estimateSpeechSeconds(
+                  line.text
+                )
+            )
+          )
+        : 0,
 
     voiceover:
       clean(voiceover),
@@ -923,11 +1490,22 @@ function createScene(
 
     lighting,
 
+    aspect_ratio:
+      aspectRatio,
+
+    master_character_lock:
+      masterCharacterLock,
+
     continuity_lock:
       continuityLock,
 
     continuity:
       continuityLock,
+
+    flow_instructions:
+      safeDialogue.length
+        ? "Generate spoken dialogue with accurate lip-sync. Natural American English voice. Do not show subtitles or dialogue text."
+        : "No spoken dialogue. Use visual storytelling and the provided voiceover only.",
 
     final_scene:
       Boolean(isFinalScene)
@@ -942,20 +1520,27 @@ function expandLongStoryBeats(
   beats,
   sceneCount
 ) {
-  if (beats.length >= sceneCount) {
+  if (
+    beats.length >= sceneCount
+  ) {
     return beats;
   }
 
   const expanded = [];
 
-  for (let i = 0; i < sceneCount; i++) {
+  for (
+    let i = 0;
+    i < sceneCount;
+    i++
+  ) {
     const source =
       beats[
         Math.min(
           beats.length - 1,
           Math.floor(
-            (i * beats.length) /
-              sceneCount
+            (i *
+              beats.length) /
+            sceneCount
           )
         )
       ];
@@ -978,19 +1563,24 @@ function generateProject(
   duration,
   aspectRatio
 ) {
-  const seconds = parseDuration(
-    duration
-  );
+  const seconds =
+    parseDuration(
+      duration
+    );
 
   const sceneCount =
-    Math.floor(seconds / 10);
+    Math.floor(
+      seconds / 10
+    );
 
   const aspect =
     clean(aspectRatio) ||
     "16:9";
 
   const characters =
-    analyzeCharacters(prompt);
+    analyzeCharacters(
+      prompt
+    );
 
   const protagonist =
     findProtagonist(
@@ -998,11 +1588,21 @@ function generateProject(
       characters
     );
 
+  const masterCharacterLock =
+    buildMasterCharacterLock(
+      prompt,
+      protagonist
+    );
+
   const rawBeats =
-    buildStoryBeats(prompt);
+    buildStoryBeats(
+      prompt
+    );
 
   const resolvedBeats =
-    resolveLocations(rawBeats);
+    resolveLocations(
+      rawBeats
+    );
 
   const workingBeats =
     expandLongStoryBeats(
@@ -1019,6 +1619,9 @@ function generateProject(
   const usedDialogue =
     new Set();
 
+  const usedVoiceovers =
+    new Set();
+
   const scenes =
     sceneGroups.map(
       (group, index) =>
@@ -1028,8 +1631,12 @@ function generateProject(
           characters,
           protagonist,
           usedDialogue,
-          index === sceneCount - 1,
-          sceneCount
+          usedVoiceovers,
+          index ===
+            sceneCount - 1,
+          sceneCount,
+          masterCharacterLock,
+          aspect
         )
     );
 
@@ -1045,13 +1652,66 @@ function generateProject(
     total_scenes:
       sceneCount,
 
+    scene_duration:
+      10,
+
     aspect_ratio:
       aspect,
+
+    protagonist,
+
+    characters,
+
+    master_character_lock:
+      masterCharacterLock,
 
     scenes,
 
     scene_plan:
       scenes,
+
+    flow_export: {
+      provider:
+        "Google Flow",
+
+      note:
+        "Flow-ready prompts. Direct automatic Flow API generation is not enabled.",
+
+      aspect_ratio:
+        aspect,
+
+      scene_duration:
+        10,
+
+      total_scenes:
+        sceneCount,
+
+      master_character_lock:
+        masterCharacterLock,
+
+      scenes:
+        scenes.map(
+          (scene) => ({
+            scene_number:
+              scene.scene_number,
+
+            duration:
+              scene.duration,
+
+            prompt:
+              scene.flow_video_prompt,
+
+            dialogue:
+              scene.dialogue_text,
+
+            voiceover:
+              scene.voiceover,
+
+            aspect_ratio:
+              scene.aspect_ratio
+          })
+        )
+    },
 
     project: {
       prompt:
@@ -1070,6 +1730,9 @@ function generateProject(
 
       characters,
 
+      master_character_lock:
+        masterCharacterLock,
+
       scenes
     }
   };
@@ -1084,10 +1747,13 @@ app.get(
   (req, res) => {
     res.json({
       success: true,
+
       message:
         "SANAPTAI 20M API is working!",
+
       engine:
         ENGINE_VERSION,
+
       timestamp:
         new Date().toISOString()
     });
@@ -1127,6 +1793,7 @@ function handleProjectRequest(
     ) {
       return res.status(400).json({
         success: false,
+
         error:
           "Video prompt is required."
       });
@@ -1139,7 +1806,9 @@ function handleProjectRequest(
         aspectRatio
       );
 
-    return res.json(result);
+    return res.json(
+      result
+    );
 
   } catch (error) {
     console.error(
@@ -1149,8 +1818,10 @@ function handleProjectRequest(
 
     return res.status(500).json({
       success: false,
+
       error:
         "Project creation failed.",
+
       details:
         error?.message ||
         "Unknown server error."
@@ -1181,7 +1852,8 @@ app.post(
 // VIDEO JOB SYSTEM
 // ============================================================
 
-const videoJobs = new Map();
+const videoJobs =
+  new Map();
 
 function createJobId() {
   return `sanaptai_${Date.now()}_${Math.random()
@@ -1216,6 +1888,7 @@ app.post(
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Video prompt is required."
           });
@@ -1224,7 +1897,8 @@ app.post(
         project =
           generateProject(
             String(prompt),
-            body.duration || 60,
+            body.duration ||
+              60,
             body.aspectRatio ||
               body.aspect_ratio ||
               "16:9"
@@ -1238,6 +1912,7 @@ app.post(
       ) {
         return res.status(400).json({
           success: false,
+
           error:
             "No scene plan available."
         });
@@ -1247,12 +1922,14 @@ app.post(
         createJobId();
 
       const job = {
-        job_id: jobId,
+        job_id:
+          jobId,
 
         status:
           "provider_not_connected",
 
-        progress: 0,
+        progress:
+          0,
 
         message:
           "Scene plan is ready. Video generation provider is not connected yet.",
@@ -1269,12 +1946,17 @@ app.post(
         aspect_ratio:
           project.aspect_ratio,
 
-        current_scene: 0,
+        current_scene:
+          0,
 
         total_scene_count:
           project.scenes.length,
 
-        video_url: null,
+        video_url:
+          null,
+
+        flow_ready:
+          true,
 
         project
       };
@@ -1287,12 +1969,14 @@ app.post(
       return res.json({
         success: true,
 
-        job_id: jobId,
+        job_id:
+          jobId,
 
         status:
           job.status,
 
-        progress: 0,
+        progress:
+          0,
 
         message:
           job.message,
@@ -1304,7 +1988,10 @@ app.post(
           job.total_scene_count,
 
         aspect_ratio:
-          job.aspect_ratio
+          job.aspect_ratio,
+
+        flow_ready:
+          true
       });
 
     } catch (error) {
@@ -1334,15 +2021,19 @@ app.post(
 app.get(
   "/api/video-status/:jobId",
   (req, res) => {
-    const { jobId } =
-      req.params;
+    const {
+      jobId
+    } = req.params;
 
     const job =
-      videoJobs.get(jobId);
+      videoJobs.get(
+        jobId
+      );
 
     if (!job) {
       return res.status(404).json({
         success: false,
+
         error:
           "Video job not found."
       });
@@ -1370,10 +2061,108 @@ app.get(
         job.total_scene_count,
 
       video_url:
-        job.video_url || null,
+        job.video_url ||
+        null,
+
+      flow_ready:
+        job.flow_ready,
 
       created_at:
         job.created_at
+    });
+  }
+);
+
+// ============================================================
+// FLOW EXPORT
+// ============================================================
+
+app.get(
+  "/api/flow-export/:jobId",
+  (req, res) => {
+    const {
+      jobId
+    } = req.params;
+
+    const job =
+      videoJobs.get(
+        jobId
+      );
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+
+        error:
+          "Video job not found."
+      });
+    }
+
+    const project =
+      job.project;
+
+    const scenes =
+      project.scenes ||
+      [];
+
+    return res.json({
+      success: true,
+
+      provider:
+        "Google Flow",
+
+      flow_ready:
+        true,
+
+      job_id:
+        jobId,
+
+      engine:
+        ENGINE_VERSION,
+
+      duration:
+        project.duration,
+
+      total_scenes:
+        scenes.length,
+
+      aspect_ratio:
+        project.aspect_ratio,
+
+      master_character_lock:
+        project.master_character_lock,
+
+      scenes:
+        scenes.map(
+          (scene) => ({
+            scene_number:
+              scene.scene_number,
+
+            duration:
+              10,
+
+            aspect_ratio:
+              scene.aspect_ratio,
+
+            prompt:
+              scene.flow_video_prompt,
+
+            dialogue:
+              scene.dialogue_text,
+
+            voiceover:
+              scene.voiceover,
+
+            camera:
+              scene.camera,
+
+            lighting:
+              scene.lighting,
+
+            continuity:
+              scene.continuity_lock
+          })
+        )
     });
   }
 );
@@ -1385,23 +2174,29 @@ app.get(
 app.post(
   "/api/video-cancel/:jobId",
   (req, res) => {
-    const { jobId } =
-      req.params;
+    const {
+      jobId
+    } = req.params;
 
     const job =
-      videoJobs.get(jobId);
+      videoJobs.get(
+        jobId
+      );
 
     if (!job) {
       return res.status(404).json({
         success: false,
+
         error:
           "Video job not found."
       });
     }
 
     if (
-      job.status === "completed" ||
-      job.status === "failed"
+      job.status ===
+        "completed" ||
+      job.status ===
+        "failed"
     ) {
       return res.json({
         success: false,
@@ -1414,7 +2209,8 @@ app.post(
     job.status =
       "cancelled";
 
-    job.progress = 0;
+    job.progress =
+      0;
 
     job.message =
       "Video generation cancelled.";
@@ -1460,10 +2256,13 @@ app.get(
           ? "configured"
           : "not_connected",
 
+      flow_ready:
+        true,
+
       message:
         provider !== "none"
           ? "Video provider configured."
-          : "Scene engine is ready. Connect a video provider to render videos."
+          : "SANAPTAI scene engine is ready and Flow-ready prompts are available. Direct Flow API generation is not connected."
     });
   }
 );
@@ -1494,6 +2293,7 @@ app.use(
   (req, res) => {
     res.status(404).json({
       success: false,
+
       error:
         "API endpoint not found."
     });
@@ -1522,5 +2322,13 @@ app.listen(
     console.log(
       `Scene duration: 10 seconds`
     );
+
+    console.log(
+      `Flow-ready prompts: enabled`
+    );
+
+    console.log(
+      `Direct Flow API: not connected`
+    );
   }
-);      
+);
